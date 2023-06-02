@@ -6,4 +6,6 @@ Vous trouverez ci-dessous la liste de ces scripts.
 
 ### Emissions autmobiles
 
-[Fusion SAAQ Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/fusion_SAAQ_RessourcesCanada.html)
+[Nettoyage des données de Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/clean_RessourcesCanada.html)
+
+[Fusion des données de la SAAQ et de Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/fusion_SAAQ_RessourcesCanada.html)
