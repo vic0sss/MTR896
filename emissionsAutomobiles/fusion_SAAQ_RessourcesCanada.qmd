@@ -1,0 +1,72 @@
+---
+title: "Fusion SAAQ-Ressources Canada"
+author: "Victor Nunzi"
+date: '2023-06-02'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+editor: visual
+---
+
+Script *Quarto* visant à fusionner les jeux de données de la SAAQ (véhicules en circulation) et de Ressources Canada (cotes de consommation).
+
+Date du dernier *render* : `r Sys.Date()`
+
+# Librairies
+
+```{r librairies, message=F, warning=F}
+library(tidyverse)
+library(knitr)
+library(DT)
+# library(janitor)
+library(sf)
+# library(tmap)
+# library(randomcoloR)
+# library(readr)
+```
+
+# Données
+
+Répertoires :
+
+```{r paths}
+data_path <- "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/"
+```
+
+On commence par charger les deux jeux de données. Dans un premier temps, on va convertir le `.csv` de la SAAQ en `.Rds` pour gagner du temps sur les prochains traitements.
+
+```{r convert-Rds, eval=FALSE}
+## eval=FALSE
+
+df.veh_en_circulation <- read.csv(paste0(data_path, "SAAQ/vehicule-en-circulation-2018.csv"))
+
+saveRDS(df.veh_en_circulation, paste0(data_path, "SAAQ/data_vehEnCirculation_20230602.Rds"))
+```
+
+Données :
+
+```{r data}
+
+df.veh_en_circulation <- readRDS(paste0(data_path, "SAAQ/data_vehEnCirculation_20230602.Rds"))
+
+df.cotes_conso <- read.csv(paste0(data_path, "AM2018 Cotes de consommation de carburant.csv"),
+                           header = T, fileEncoding="windows-1252")
+
+df.cotes_conso <- df.cotes_conso[,1:15] # tout est vide après la 15e colonne
+```
+
+# Traitement
+
+## Nettoyage des données de Ressources Canada
+
+On commence avec les noms des champs :
+
+```{r colnames-cotes}
+print(colnames(df.cotes_conso))
+```
