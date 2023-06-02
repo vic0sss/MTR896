@@ -2,8 +2,8 @@ Bienvenue sur la page d'accueil du projet MTR896. L'intégralité des traitement
 
 Vous trouverez ci-dessous la liste de ces scripts.
 
-## Liste des scripts {-}
+## Liste des scripts
 
-### Emissions autmobiles {-}
+### Emissions autmobiles
 
 [Fusion SAAQ Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/fusion_SAAQ_RessourcesCanada.html)
