@@ -1,0 +1,242 @@
+---
+title: "Nettoyage des données de Ressources Canada"
+author: "Victor Nunzi"
+date: '2023-06-02'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+editor: visual
+---
+
+Script *Quarto* visant à nettoyer les données de Ressources Canada (cotes de consommation).
+
+Date du dernier *render* : `r Sys.Date()`
+
+```{r librairies, message=F, warning=F, echo = F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+```
+
+# Données
+
+On affiche l'ensemble des fichiers à nettoyer et fusionner :
+
+```{r list-files}
+data_path <- "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/Ressources Canada"
+
+list.files <- list.files(data_path)
+
+print(list.files)
+```
+
+On les lit tous :
+
+```{r read-all}
+for(file in list.files){
+  
+  # on simplifie les noms en utilisant uniquement un préfixe :
+  df_name <- str_split(file, " ")[[1]][1]
+  df_name <- str_replace(df_name, "-", "_")
+  
+  # on distingue les fichiers des voitures hybrides et 100% elec, qui ont le même préfixe :
+  if(df_name == "AM2012_2023"){
+    df_name <- paste0(
+      df_name,
+      "_",
+      stri_trans_general(str = str_split(file, " ")[[1]][3], id = "Latin-ASCII")
+    )
+    
+    df_name <- str_sub(df_name, 1, 16)
+  }
+  
+  assign(df_name, 
+         read.csv(
+           paste(data_path, file, sep = "/"),
+           header = T, fileEncoding="windows-1252"
+         ))
+}
+```
+
+# Traitement
+
+## Nettoyage
+
+On va maintenant nettoyer tous les fichiers dans l'ordre (on commence par `AM1995_1999`). On remarque dans un premier temps que les entêtes sont mal formattés, et sont écrits sur deux lignes :
+
+```{r view-AM1995_1999, echo = F}
+datatable(AM1995_1999[1:10,],
+          rownames = FALSE,
+          class = "nowrap",
+          # extensions = 'Buttons',
+          # options = list(
+          #   scrollX = T,
+          #   dom = 'Bfrtip',
+          #   buttons =
+          #     list(
+          #       list(
+          #         extend = 'collection',
+          #         buttons = c('csv', 'excel'),
+          #         text = 'Download'
+          #         )
+          #       )
+          #   )
+          )
+```
+<br>
+
+De même, les explications des données sont à la fin du csv, ce qui est peu pratique :
+
+![](C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles/pictures/screenshot_2023-06-02 161552.jpg)
+
+On nettoie tout cela, à commencer par les noms de colonnes :
+
+```{r colnames-AM1995_1999}
+colnames(AM1995_1999) <- 
+  c("annee_modele",
+    "marque",
+    "modele",
+    "catVeh",
+    "cyl_L",
+    "nbCyl",
+    "transmission",
+    "typeFuel",
+    "consoFuel_ville_L100km",
+    "consoFuel_route_L100km",
+    "consoFuel_comb_L100km",
+    "consoFuel_comb_migal",
+    "emiCO2_gkm")
+```
+
+Et on ne garde que les lignes avec des données :
+
+```{r slice-AM1995_1999}
+AM1995_1999 <- AM1995_1999[2:3520,]
+```
+
+Affichage (100 premières lignes) :
+
+```{r view-AM1995_1999-2, echo = F}
+datatable(AM1995_1999[1:100,],
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+
+On fait le même genre de traitement pour les autres jeux de données (en vérifiant d'abord chaque jeu de données individuellement).
+
+Noms de colonnes pour les voitures thermiques :
+
+```{r therm-colnames}
+list.df_names <- list("AM2000_2004",
+                      "AM2005_2009",
+                      "AM2010_2014",
+                      "AM2015",
+                      "AM2016",
+                      "AM2017",
+                      "AM2018")
+
+for(name in list.df_names){
+  
+  df.temp <- get(name)
+  
+  colnames(df.temp) <- 
+    c("annee_modele",
+      "marque",
+      "modele",
+      "catVeh",
+      "cyl_L",
+      "nbCyl",
+      "transmission",
+      "typeFuel",
+      "consoFuel_ville_L100km",
+      "consoFuel_route_L100km",
+      "consoFuel_comb_L100km",
+      "consoFuel_comb_migal",
+      "emiCO2_gkm")
+  
+  assign(name, df.temp)
+}
+```
+
+Noms de colonnes pour les voitures hybrides :
+
+```{r hybr-colnames}
+colnames(AM2012_2023_hybr) <- 
+    c("annee_modele",
+      "marque",
+      "modele",
+      "catVeh",
+      "moteur",
+      "cyl_L",
+      "nbCyl",
+      "transmission",
+      "typeFuel_1",
+      "conso_Le100km",
+      "autonomie_1_km",
+      "tempsRecharge",
+      "typeFuel_2",
+      "consoFuel_ville_L100km",
+      "consoFuel_route_L100km",
+      "consoFuel_comb_L100km",
+      "autonomie_2_km",
+      "emiCO2_gkm")
+```
+
+
+Noms de colonnes pour les voitures électriques :
+
+```{r elec-colnames}
+colnames(AM2012_2023_elec) <- 
+    c("annee_modele",
+      "marque",
+      "modele",
+      "catVeh",
+      "moteur",
+      "transmission",
+      "typeFuel",
+      "consoFuel_ville_kWh100km",
+      "consoFuel_route_kWh100km",
+      "consoFuel_comb_kWh100km",
+      "consoFuel_ville_Le100km",
+      "consoFuel_route_Le100km",
+      "consoFuel_comb_Le100km",
+      "autonomie_km",
+      "emiCO2_gkm")
+```
+
+
+Sélection des lignes (et colonnes) avec les données :
+
+```{r all-clean}
+AM2000_2004 <- AM2000_2004[2:3777,]
+AM2005_2009 <- AM2005_2009[2:5206, 1:13]
+AM2010_2014 <- AM2010_2014[2:5360, 1:13]
+
+AM2015 <- AM2015[2:1133, 1:13]
+AM2016 <- AM2016[2:1111, 1:13]
+AM2017 <- AM2017[2:1059, 1:13]
+AM2018 <- AM2018[2:1084, 1:13]
+
+AM2012_2023_hybr <- AM2012_2023_hybr[2:250, 1:18]
+AM2012_2023_elec <- AM2012_2023_elec[2:425, 1:15]
+```
+
