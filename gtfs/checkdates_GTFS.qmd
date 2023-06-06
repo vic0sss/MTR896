@@ -1,6 +1,7 @@
 ---
 title: "Vérification des dates couvertes par les GTFS"
-date: '2023-06-02'
+author: "Victor Nunzi"
+date: '2023-06-06'
 format: 
   html:
     toc: true
@@ -12,11 +13,103 @@ format:
     embed-resources: true
 ---
 
-Script *Quarto* visant à vérifier que les dates de l'enquête OD 2018 (EOD 2018) sont couvertes par les jeux de données GTFS disponibles.
+Script *Quarto* visant à vérifier que les dates de l'enquête OD 2018 (EOD 2018) sont couvertes par les jeux de données GTFS disponibles. Merci aux contributions de Jérémy Gelb à l'ARTM.
 
 Date du dernier *render* : `r Sys.Date()`
 
 ```{r librairies, message=F, warning=F, echo = F}
 source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
 ```
+
+On va tester que les jeux de données GTFS choisis couvrent toute la période choisie. En raison du nombre de publications GTFS pendant la période de l'EOD, avoir un ensemble de GTFS pour chaque changement impliquerait un total de **15 dossiers différents**, ce qui n'est pas souhaitable (cf. ce [document PDF](https://github.com/vic0sss/MTR896/blob/main/gtfs/dates%20publications%20GTFS%20EOD%202018.pdf) pour les dates de publications GTFS par OPTC).
+
+On va donc choisir une semaine typique, pour laquelle un seul ensemble de fichiers GTFS est nécessaire. On prend arbitrairement la deuxième semaine de l'enquête (du **2018-09-10** au **2018-09-14**), car la première semaine débute un mardi. Ainsi, on considérera que n'importe quel déplacement effectué un lundi a été réalisé le 09-08, un mardi le 09-09, etc..
+
+```{r date-vect}
+date_vect <- seq(as.Date("2018-09-10"), as.Date("2018-09-14"), by="days")
+```
+
+Pour sélectionner les bons GTFS, la méthodologie est la suivante : 
+
+1. on prend comme ensemble initiale toute les publications les plus récentes **avant le début de l'enquête** ;
+2. on exécute le script ci-après ;
+3. si la période n'est pas couverte par un GTFS en particulier, on le remplace par la publication suivante, et ainsi de suite.
+
+Dossier avec les GTFS initiaux :
+
+```{r v0-folder}
+path <- "C:/Users/victo/OneDrive - ARTM/Documents/Travail/02_Donnees/04_MTR896/r5r_core/v0"
+
+list.files(path)
+```
+
+Test : 
+
+```{r test-v0, warning=F}
+check_dates <- function(path, date_vect){
+  
+  setwd(path)
+  
+  gtfs_files <- list.files(pattern = "*.zip")
+  
+  
+  for(gtfs in gtfs_files){
+    
+    feed <- read_gtfs(gtfs)
+    
+    error_list <- 
+      lapply(
+        
+        date_vect,
+        
+        function(date){
+          filter <- try(filter_feed_by_date(
+            feed,
+            date,
+            min_departure_time = "00:00:00",
+            max_arrival_time = "23:59:00"
+          ), silent = T)
+          
+          if("try-error" %in% class(filter)){
+            return(
+              paste0("----- Date absente : ", date)
+            )
+          }
+        }
+      )
+    
+    error_list <- error_list[!sapply(error_list, is.null)]
+    
+    print(
+      paste0(
+        "Nombre d'erreurs pour ", gtfs, " : ", length(error_list)
+        )
+      )
+    
+    if(length(error_list) >= 1){
+      for (i in 1:length(error_list)){print(error_list[[i]])}
+    }
+  }
+  
+}
+
+
+
+check_dates(path, date_vect)
+```
+
+On constate que le GTFS utilisé pour le RTM Laurentides (`citla`) ne couvre pas la période : on le remplace par la publication suivante.
+
+```{r v1-folder}
+path <- "C:/Users/victo/OneDrive - ARTM/Documents/Travail/02_Donnees/04_MTR896/r5r_core/v1 - final"
+
+list.files(path)
+```
+
+```{r v1-test, echo = F, warning = F}
+check_dates(path, date_vect)
+```
+
+Les GTFS sélectionnés fonctionnent tous pour la période !
+
 
