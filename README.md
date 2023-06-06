@@ -1,4 +1,4 @@
-Bienvenue sur la page d'accueil du projet MTR896. L'intégralité des traitement sont réalisés avec le langage R, et tous les scripts sont documentés et hébergés ici sous forme de fichier HTML générés par *Quarto*.
+Bienvenue sur la page d'accueil du projet MTR896. L'intégralité des traitements sont réalisés avec le langage R, et tous les scripts sont documentés et hébergés ici sous forme de fichier HTML générés par *Quarto*.
 
 Vous trouverez ci-dessous la liste de ces scripts.
 
