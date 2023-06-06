@@ -240,3 +240,115 @@ AM2012_2023_hybr <- AM2012_2023_hybr[2:250, 1:18]
 AM2012_2023_elec <- AM2012_2023_elec[2:425, 1:15]
 ```
 
+Enfin, on fusionne les dataframes obtenus :
+
+```{r merge-245}
+df.merged.AM <- do.call(bind_rows,
+                        list(AM1995_1999,
+                             AM2000_2004,
+                             AM2005_2009,
+                             AM2010_2014,
+                             AM2015,
+                             AM2016,
+                             AM2017,
+                             AM2018,
+                             AM2012_2023_hybr,
+                             AM2012_2023_elec))
+```
+
+```{r rm-258, echo=FALSE}
+do.call(rm, list("AM1995_1999",
+                 "AM2000_2004",
+                 "AM2005_2009",
+                 "AM2010_2014",
+                 "AM2015",
+                 "AM2016",
+                 "AM2017",
+                 "AM2018",
+                 # "AM2012_2023_hybr",
+                 "AM2012_2023_elec"))
+```
+
+
+On ne garde que les colonnes qui permettent la fusion avec les données de la SAAQ :
+
+```{r select-260}
+df.merged.AM <- df.merged.AM %>%
+  select(c(annee_modele,
+           marque,
+           modele,
+           cyl_L,
+           nbCyl,
+           typeFuel,
+           emiCO2_gkm))
+```
+
+Pour concorder avec la marque et le modèle, on réalise les opérations suivantes :
+
+1. passage en majuscules ;
+2. suppression des espaces ;
+3. suppression des caractères non-alphanumériques ;
+4. troncage pour ne garder que les 5 premiers caractères.
+
+```{r modif-marque-modele}
+df.merged.AM <- df.merged.AM %>%
+  mutate(
+    
+    across(c(marque, modele),
+           toupper),
+    
+    across(c(marque, modele),
+           ~ str_remove_all(., " ")),
+    
+    across(c(marque, modele),
+           ~ str_remove_all(., "[^[:alnum:]]")),
+    
+    across(c(marque, modele),
+           ~ ifelse(str_length(.) > 5, str_sub(., 1, 5), .))
+  )
+```
+
+On cap le nombre de cylindres à 9, et on passe les données de cylindrée de L à $cm^3$ : 
+
+```{r modif-cyl}
+df.merged.AM <- df.merged.AM %>%
+  mutate(
+    nbCyl = ifelse(nbCyl > 9, 9, nbCyl),
+    
+    cyl_cm3 = as.numeric(cyl_L)*1000
+  )
+```
+
+On recode les types de carburants pour correspondre aux données de la SAAQ :
+
+```{r modif-typ-carb}
+df.merged.AM <- df.merged.AM %>%
+  mutate(
+    typ_carb_SAAQ = case_when(
+      is.na(typeFuel) ~ "W", # hybride branchable
+      typeFuel == "B" ~ "L", # électricité
+      typeFuel == "X" ~ "E", # essence ordinaire
+      typeFuel == "Z" ~ "E", # essence super
+      typeFuel == "D" ~ "D", # diesel
+      typeFuel == "E" ~ "T", # éthanol
+      typeFuel == "N" ~ "N", # gaz naturel
+      TRUE ~ NA_character_
+    )
+  )
+
+print(table(df.merged.AM$typ_carb_SAAQ, useNA = "ifany"))
+print(nrow(AM2012_2023_hybr))
+```
+
+
+
+
+# Enregistrement
+
+```{r write-260}
+write.csv(df.merged.AM, 
+          "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles/results/data_cleanedRessourcesCanada_20230606.csv",
+          row.names = F)
+```
+
+
