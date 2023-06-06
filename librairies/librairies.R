@@ -1,6 +1,7 @@
 ## Chargement de l'ensemble des librairies nécessaires au traitement
 
 library(tidyverse)
+library(tidytransit)
 library(knitr)
 library(DT)
 # library(janitor)

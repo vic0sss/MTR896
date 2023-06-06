@@ -1,0 +1,22 @@
+---
+title: "Vérification des dates couvertes par les GTFS"
+date: '2023-06-02'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à vérifier que les dates de l'enquête OD 2018 (EOD 2018) sont couvertes par les jeux de données GTFS disponibles.
+
+Date du dernier *render* : `r Sys.Date()`
+
+```{r librairies, message=F, warning=F, echo = F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+```
+
