@@ -1,0 +1,75 @@
+---
+title: "Nettoyage des données de la SAQ par modèles"
+author: "Victor Nunzi"
+date: '2023-06-06'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à nettoyer et filtrer les données de la SAAQ.
+
+Date du dernier *render* : `r Sys.Date()`
+
+```{r librairies, message=F, warning=F, echo = F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+```
+
+# Données 
+
+On charge les données de la SAAQ, préalablement converties en `.Rds` (le fichier de base, `vehicule-en-circulation-2018.csv`, est un peu lourd) : 
+
+```{r read-28}
+df.vehSAAQ <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/SAAQ/data_vehEnCirculation_20230602.Rds")
+```
+
+On a actuellement un enregistrement pour chaque véhicule immatriculé au Québec en 2018 (total : `r nrow(df.vehSAAQ)` lignes).
+
+# Traitement
+
+## Filtres
+
+### Années, marque, modèle {-}
+
+On commence par filtrer les données, à commencer par les années non renseignées :
+
+```{r fitler-an-mod}
+df.vehSAAQ.filter <- df.vehSAAQ %>%
+  filter(!is.na(ANNEE_MOD))
+```
+
+Puis la marque :
+
+```{r filter-MARQ}
+df.vehSAAQ.filter <- df.vehSAAQ.filter %>%
+  filter(MARQ_VEH != "") %>% # pas de marque renseignée  
+  filter(!(MARQ_VEH %in% c("AMOVI", "ARTIS", "SOUFF"))) # cas particuliers, cf. doc de la SAAQ
+```
+
+Et enfin les modèles :
+
+```{r filter-MOD}
+df.vehSAAQ.filter <- df.vehSAAQ.filter %>%
+  filter(MODEL_VEH != "") %>%
+  filter(MODEL_VEH != "ARTIS")
+```
+
+Nombre d'obervations enlevées : `r nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter)` (**`r round((nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter))/nrow(df.vehSAAQ), 3)*100` %**).
+
+### Classe du véhicule {-}
+
+Pour concorder avec les données de Ressources Canada, on ne sélectionne que les véhicules catégorisés comme des automobiles, camions légers, ou taxi :
+
+```{r filter-CLAS}
+df.vehSAAQ.filter <- subset(df.vehSAAQ.filter, CLAS %in% c("PAU", "CAU", "RAU", "TTA"))
+```
+
+### Localisation {-}
+
+
