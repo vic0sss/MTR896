@@ -1,0 +1,42 @@
+---
+title: "Sélection des municipalités sur le territoire de l'EOD 2018"
+author: "Victor Nunzi"
+date: '2023-06-07'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à sélectionner les municipalités sur le territoire de l'EOD 2018.
+
+Date du dernier *render* : `r Sys.Date()`
+
+```{r librairies, message=F, warning=F, echo = F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+```
+
+# Données
+
+Les limites des municipalités ont été téléchargées [ici](https://www.donneesquebec.ca/recherche/fr/dataset/decoupages-administratifs). On charge les données :
+
+```{r data}
+sf.terr_od18 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-limiteOD/TERR_OD2018.shp",             quiet = T)
+sf.munic     <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/Sda/version_courante/SHP/munic_s.shp", quiet = T)
+```
+
+Reprojection :
+
+```{r reproj}
+sf.terr_od18 <- st_transform(sf.terr_od18, crs = 32188)
+sf.munic     <- st_transform(sf.munic,     crs = 32188)
+```
+
+# Sélection
+
+
