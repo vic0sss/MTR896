@@ -3066,7 +3066,7 @@ vertical-align: -.125em;
 </header>
 
 <p>Script <em>Quarto</em> visant à calculer la distance à vol d’oiseau de chaque déplacement sélectionné.</p>
-<p>Date du dernier <em>render</em> : 2023-06-20</p>
+<p>Date du dernier <em>render</em> : 2023-06-21</p>
 <section id="librairies-et-fonctions" class="level2 unnumbered">
 <h2 class="unnumbered anchored" data-anchor-id="librairies-et-fonctions">Librairies et fonctions</h2>
 <div class="cell">
@@ -3078,7 +3078,7 @@ vertical-align: -.125em;
 <h2 data-number="1" class="anchored" data-anchor-id="données"><span class="header-section-number">1</span> Données</h2>
 <p>On commence par charger les déplacements préalablement préparés :</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>depl <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">&quot;C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb2"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1" aria-hidden="true" tabindex="-1"></a>depl <span class="ot">&lt;-</span> <span class="fu">readRDS</span>(<span class="st">&quot;C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 <section id="origines-et-distinations" class="level2" data-number="2">
@@ -3106,7 +3106,7 @@ vertical-align: -.125em;
 <h2 data-number="3" class="anchored" data-anchor-id="enregistrement"><span class="header-section-number">3</span> Enregistrement</h2>
 <p>On enregistre :</p>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(depl, <span class="st">&quot;C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">saveRDS</span>(depl, <span class="st">&quot;C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds&quot;</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 </section>
 

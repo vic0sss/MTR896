@@ -29,7 +29,7 @@ source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/
 On commence par charger les déplacements préalablement préparés :
 
 ```{r data-eod-18}
-depl <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
+depl <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
 ```
 
 ```{r load-eod, eval=F, echo=F}
@@ -64,8 +64,7 @@ depl$d_dist_straight <- round(as.numeric(depl$d_dist_straight))
 ## Enregistrement
 
 On enregistre : 
+
 ```{r save-depl}
-saveRDS(depl,            "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
-saveRDS(sf.origines,     "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/origines.Rds")
-saveRDS(sf.destinations, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/destinations.Rds")
+saveRDS(depl, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
 ```
