@@ -1,0 +1,504 @@
+---
+title: "Préparation des données pour les calculs de distances"
+author: "Victor Nunzi"
+date: '2023-06-20'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à préparer les données de l'enquête OD pour calculer ensuite les distances de chaque déplacement (à vol d'oiseau et réseau).
+
+Date du dernier *render* : `r Sys.Date()`
+
+## Librairies et fonctions {-}
+
+```{r lib-fonctions, message=F, warning=F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Données
+
+On commence par charger les données de l'enquête OD :
+
+```{r data-eod-18}
+od18 <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/od18niv2_plus.csv")
+```
+
+Nombre de lignes : `r nrow(od18)`
+
+## Filtre -- Personnes mobiles
+
+On commence par ne garder que les personnes mobiles, ce qui nous donne un fichier de déplacements :
+
+```{r depl}
+depl <- subset(od18, p_mobil == 1)
+
+rm(od18)
+```
+
+Nombre de déplacements : `r nrow(depl)`
+
+## Filtre -- Déplacement sans coordonnées
+
+On identifie les déplacements dont les coordonnées de départ ou d'arrivée ne sont pas renseignées :
+
+```{r coord-NA}
+depl$d_coordNA <-
+  rowSums(
+    is.na(
+      depl %>% select(d_orilat,
+                      d_orilon,
+                      d_deslat,
+                      d_deslon)
+      )
+  ) >= 1
+```
+
+Cela concerne `r sum(depl$d_coordNA)` déplacements sur `r nrow(depl)` (`r round(sum(depl$d_coordNA)/nrow(depl),3)*100`&nbsp;%). 
+
+On les retire :
+
+```{r subset-69}
+depl <- subset(depl, !d_coordNA)
+```
+
+
+## Filtre -- Déplacement émetteurs
+
+On identifie maintenant les modes qui nous intéressent, à savoir :
+
+- les automobiles et les motocyclettes (1, 2, 11, 12) ;
+- les autobus et le transport adapté (3, 5, 6, 7, 9, 10, 15) ;
+- le train (8).
+
+On commence par convertir les modes de valeurs numériques à chaînes de caractères :
+
+```{r convert-modes}
+depl <- depl %>%
+  
+  mutate(
+    across(d_mode1:d_mode9, # on passe les modes en chaînes de caractères
+           function(x){
+             char <- as.character(x)
+             char <- ifelse(str_length(char) == 1,      # le mode 1 devient "01", etc.
+                            paste("0", char, sep = ""),
+                            char)
+             return(char)
+             }
+           )
+  )
+```
+
+Puis on crée des séquences de modes (de la forme mode1-mode2-...-mode9) :
+
+```{r modeseq}
+depl <- depl %>% 
+  unite("d_modeseq", d_mode1:d_mode9,
+        remove = F, na.rm = T, sep = "-")
+```
+
+Enfin, on crée un champ binaire `d_emiGES`, indiquant si le déplacement inclut un des modes que l'on considère comme émetteur :
+
+```{r emiGES}
+depl$d_emiGES <-
+  str_detect_vect(depl$d_modeseq,
+                  c("01", "02", "11", "12",                   # automobile et moto
+                    "03", "05", "06", "07", "09", "10", "15", # bus et TA
+                    "08"))                                    # train
+```
+
+On *subset* :
+
+```{r subset-emiGES}
+depl_emiGES <- subset(depl, d_emiGES)
+```
+
+`r nrow(depl_emiGES)` déplacements concernés (`r round(nrow(depl_emiGES)/nrow(depl),3)*100`&nbsp;%).
+
+Enfin, on identifie les déplacements dont au moins un mode n'est pas quantifiable :
+
+```{r modeprob}
+depl_emiGES$d_modeprob <-
+  str_detect_vect(depl_emiGES$d_modeseq,
+                  c("16",  # mode interurbain
+                    "18")) # indéterminé  
+```
+
+`r sum(depl_emiGES$d_modeprob)` déplacements concernés (`r round(sum(depl_emiGES$d_modeprob)/nrow(depl_emiGES),3)*100`&nbsp;%). On les retire :
+
+```{r subset-modeprob}
+depl_emiGES <- subset(depl_emiGES, !d_modeprob)
+```
+
+
+## Séparation en segments
+
+On s'intéresse aux déplacements que l'on peut séparer en plusieurs segments distincts, cela concerne `r sum(str_detect_vect(depl_emiGES$d_modeseq, "17"))` déplacements (`r round(sum(str_detect_vect(depl_emiGES$d_modeseq, "17"))/nrow(depl_emiGES),3)*100`&nbsp;%).
+
+On les identifie, et on *subset* :
+
+```{r jonction-subset}
+depl_emiGES$d_jonction <-
+  str_detect_vect(depl_emiGES$d_modeseq, "17")
+
+temp <- subset(depl_emiGES, d_jonction)
+```
+
+
+Pour créer les segments, on va créer un champ `s_rang`, tel que `s_rang == 1` si le déplacement se fait sans point de jonction (donc un seul segment), **OU** s'il s'agit du premier segment; et `s_rang == 2` s'il s'agit du segment après le premier point de jonction.
+
+En d'autres termes, on veut passer d'une table de déplacements comme celle-ci :
+
+```{r table-depl, echo = F}
+print(
+  data.frame(
+    "ipere"   = c(101, 102),
+    "d_mode1" = c(1, 3),
+    "d_mode2" = c(NA, 17),
+    "d_mode3" = c(NA, 5),
+    "d_mode4" = c(NA, 7)
+  )
+)
+```
+
+À une table de "segments" comme celle-ci :
+
+```{r table-segm, echo = F}
+print(
+  data.frame(
+    "ipere"   = c(101, 102, 102),
+    "s_rang"  = c(1, 1, 2),
+    "s_mode1" = c(1, 3, 5),
+    "s_mode2" = c(NA, NA, 7),
+    "s_mode3" = NA,
+    "s_mode4" = NA
+  )
+)
+```
+
+Pour une minorité de déplacements (seulement 49), deux points de jonctions sont renseignés dans la séquence de modes. Néanmoins, on ne dispose de coordonnées que pour le premier d'entre eux, donc on ignore le deuxième point de jonction.
+
+On procède à la conversion :
+
+```{r depl-to-segm}
+# on crée un table avec un ligne par mode emprunté :
+
+temp <- temp %>% 
+  pivot_longer( 
+    cols = d_mode1:d_mode9,
+    names_to  = "d_modenum",
+    values_to = "d_modevalue",
+    values_drop_na = T
+  )
+
+# initialisation du champ s_rang :
+
+temp$s_rang    <- -1
+temp$s_rang[1] <- 1
+
+
+# on donne la valeur 1 ou 2 à s_rang selon si l'on se trouve avant ou après un point de jonction (17) :
+
+for (i in 1:(nrow(temp)-1)){ 
+  
+  if(temp$d_modevalue[i] == 17){
+    # Si la ligne est un point de jonction, s_rang vaut 0 pour cette ligne et on incrémente s_rang pour la suivante :
+    temp$s_rang[i]   <- 0
+    temp$s_rang[i+1] <- 2
+  }
+  else{ 
+    # Sinon (la ligne suivante n'est pas un point de jonction) :
+    if(temp$ipere[i+1] == temp$ipere[i]){ 
+      # Si on est toujours dans le même déplacement à la ligne suivante, s_rang[i+1] = s_rang[i] :
+      temp$s_rang[i+1] <- temp$s_rang[i]
+    }
+    else{
+      # Si on change de déplacement à la ligne suivante, s_rang[i+1] = 1 :
+      temp$s_rang[i+1] <- 1
+      } 
+  }
+  
+}
+
+saveRDS(temp, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/temp_segm.Rds")
+```
+
+On transforme la table obtenue :
+
+```{r post-traitement-segments}
+temp <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/temp_segm.Rds")
+
+temp <- temp %>%
+  
+  filter(s_rang != 0) %>% # on supprime les lignes correspondant aux points de jonctions
+  
+  mutate(s_uid = paste(ipere, s_rang, sep = "_")) %>% # on crée un id unique pour les séquences
+  
+  group_by(s_uid) %>% # on groupe par cet id
+  
+  mutate(s_modenum = 1:n()) %>% # on note l'ordre des modes utilisés
+  
+  ungroup() %>%
+  
+  pivot_wider( # on crée les champs s_mode1, s_mode2, etc.
+    id_cols = s_uid,
+    names_from = s_modenum,
+    names_prefix = "s_mode",
+    values_from = d_modevalue
+  )
+
+
+temp <- temp %>%
+  mutate(
+    
+    # on récupère les ipere et les s_rang :
+    
+    ipere = as.numeric(
+      get_element(str_split(s_uid, pattern = "_"), 1)
+      ),
+    
+    s_rang = as.numeric(
+      get_element(str_split(s_uid, pattern = "_"), 2)
+    ),
+    
+    # on crée un champ s_multi, TRUE si le déplacement s'effectue en 2 séquences, FALSE sinon
+    
+    s_multi = (paste(ipere, 2, sep = "_") %in% s_uid)
+    
+    )
+```
+
+On ajoute les autres champs d'intérêt :
+
+```{r ajout-champs-238}
+# on ajoute les autres champs d'intérêt :
+
+temp <- left_join(temp,
+                  depl_emiGES[c("ipere",
+                                "d_orilon",
+                                "d_orilat",
+                                "d_deslon",
+                                "d_deslat",
+                                "d_jonlon",
+                                "d_jonlat")],
+                     by = "ipere")
+```
+
+On attribue les coordonnées d'origine et de destination à chaque segment. S'il s'agit du premier segment du déplacement, les coordonnées d'origine sont celles du déplacement, et les coordonnées de destination sont celles du point de jonction. S'il s'agit du deuxième segment du déplacement, les coordonnées d'origine sont celles du point de jonction, et les coordonnées de destination sont celles du déplacement.
+
+```{r coord-segm}
+temp <- temp %>%
+  mutate(
+    s_orilon = 
+      ifelse(!s_multi | s_rang == 1,
+             d_orilon,
+             d_jonlon),
+    s_orilat = 
+      ifelse(!s_multi | s_rang == 1,
+             d_orilat,
+             d_jonlat),
+    
+    s_deslon = 
+      ifelse(!s_multi | s_rang == 2,
+             d_deslon,
+             d_jonlon),
+    s_deslat = 
+      ifelse(!s_multi | s_rang == 2,
+             d_deslat,
+             d_jonlat),
+    )
+```
+
+Enfin, on garde les champs d'intérêt et on enregistre :
+
+```{r write-segm}
+temp <- temp %>% select(
+    s_uid,
+    ipere,
+    s_mode1:s_mode4,
+    s_orilon:s_deslat
+  )
+
+write.csv(temp, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/segments.csv",
+          row.names = F)
+
+rm(temp)
+```
+
+
+## Préparation des modes
+
+On crée une fonction qui prend en entrée un `dataframe` possédant une colonne avec une séquence de mode, et ajoute un champ binaire pour chaque mode utilisé dans `r5r` (dans le contexte montréalais), à savoir :
+
+- `CAR`;
+- `BICYCLE`;
+- `SUBWAY`;
+- `RAIL`;
+- `BUS`.
+
+
+```{r function-r5r-modes}
+r5r_modes <- function(df, modeseq){
+  
+  vect_modeseq <- df[modeseq][,1]
+  
+  # on met le TA et les bus scolaires avec la voiture, car on ne connaît pas les lignes
+  df$CAR     <- str_detect_vect(vect_modeseq, c("01", "02", "09", "11", "12", "15")) 
+  
+  df$BICYCLE <- str_detect_vect(vect_modeseq, c("13"))
+  df$SUBWAY  <- str_detect_vect(vect_modeseq, c("04"))
+  df$RAIL    <- str_detect_vect(vect_modeseq, c("08"))
+  df$BUS     <- str_detect_vect(vect_modeseq, c("03", "05", "06", "07", "10"))
+  
+  df <- df %>%
+    mutate(
+      across(CAR:BUS,
+             ~ as.integer(.))
+    )
+  
+  df$r5r_modelist <- NA
+  
+  for(mode in c("CAR", "BICYCLE", "SUBWAY", "RAIL", "BUS")){
+    df$r5r_modelist <- ifelse(df[mode][,1], 
+                              paste(df$r5r_modelist, mode, sep= "-"),
+                              df$r5r_modelist)
+  }
+  df$r5r_modelist <- str_remove(df$r5r_modelist, "NA-")
+  
+  return(df)
+}
+```
+
+On applique cette fonction à notre table de déplacements, et à notre table de segments :
+
+```{r r5r-modes}
+depl_emiGES <- r5r_modes(depl_emiGES, "d_modeseq")
+
+
+segments <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/segments.csv")
+
+
+segments <- segments %>%
+  mutate(
+    across(s_mode1:s_mode4, # on passe les modes en chaînes de caractères
+           function(x){
+             char <- as.character(x)
+             char <- ifelse(str_length(char) == 1,      # le mode 1 devient "01", etc.
+                            paste("0", char, sep = ""),
+                            char)
+             return(char)
+             }
+           )
+  ) %>% 
+  unite("s_modeseq", s_mode1:s_mode4,
+        remove = F, na.rm = T, sep = "-")
+
+segments <- r5r_modes(segments, "s_modeseq")
+
+write.csv(segments, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/segments.csv",
+          row.names = F)
+```
+
+On a un total de `r n_distinct(depl_emiGES$r5r_modelist)` combinaisons de modes.
+
+
+## Préparation des heures
+
+Afin de diminuer le nombre d'appels à la fonction `r5r::detailed_itineraries`, on va arrondir les heures à 15 min près, et spécifier dans l'appel de la fonction `time_window = 15`. De plus, pour utiliser un seul jeu de données GTFS, on va rapporter tous les déplacements à une semaine de référence (voir [ce script](https://vic0sss.github.io/MTR896/gtfs/checkdates_GTFS.html)).
+
+On formate la date pour correspondre à la semaine typique choisie :
+
+```{r format-date}
+depl_emiGES$r5r_date <- case_when(
+  depl_emiGES$d_jour == "Lundi" ~ "2018-09-10",
+  depl_emiGES$d_jour == "Mardi" ~ "2018-09-11",
+  depl_emiGES$d_jour == "Mercr" ~ "2018-09-12",
+  depl_emiGES$d_jour == "Jeudi" ~ "2018-09-13",
+  depl_emiGES$d_jour == "Vendr" ~ "2018-09-14"
+)
+
+depl_emiGES$r5r_date <- as.Date(depl_emiGES$r5r_date)
+```
+
+On traite les heures après 00h :
+
+```{r post-00}
+depl_emiGES$r5r_date <- 
+  ifelse(depl_emiGES$d_hrede >= 2400,
+         depl_emiGES$r5r_date + 1,
+         depl_emiGES$r5r_date)
+
+depl_emiGES$r5r_date <- 
+  as.Date(depl_emiGES$r5r_date, origin = '1970-01-01')
+
+
+depl_emiGES$d_hrede <- 
+  ifelse(depl_emiGES$d_hrede >= 2400,
+         depl_emiGES$d_hrede - 2400,
+         depl_emiGES$d_hrede)
+```
+
+On arrondi les heures au quart d'heure inférieur :
+
+```{r}
+## on commence par convertir les heures en chaînes de caractères :
+depl_emiGES$d_hrede_char <- 
+  as.character(depl_emiGES$d_hrede)
+
+depl_emiGES$d_hrede_char <- 
+  sapply(
+    depl_emiGES$d_hrede_char,
+    function(x) paste0(paste(rep("0", 4-str_length(x)), collapse = ""), x)
+  )
+
+## on convertit les heures en minutes :
+depl_emiGES$d_minde <- 
+  as.numeric(str_sub(depl_emiGES$d_hrede_char, 1, 2))*60 +
+  as.numeric(str_sub(depl_emiGES$d_hrede_char, 3, 4))
+
+## puis on arrondit aux 15 min :
+depl_emiGES$d_minde <-
+  floor(depl_emiGES$d_minde/15)*15
+
+## et enfin on fait le chemin inverse :
+depl_emiGES$d_hrede_15min <- 
+  paste0(
+    ifelse(str_length(as.character(depl_emiGES$d_minde%/%60)) == 1,
+           paste0("0", as.character(depl_emiGES$d_minde%/%60)),
+           as.character(depl_emiGES$d_minde%/%60)),
+    ifelse(str_length(as.character(depl_emiGES$d_minde%%60)) == 1,
+           paste0("0", as.character(depl_emiGES$d_minde%%60)),
+           as.character(depl_emiGES$d_minde%%60))
+  )
+
+depl_emiGES$d_hrede_15min <-
+  paste(
+    str_sub(depl_emiGES$d_hrede_15min, 1, 2),
+    str_sub(depl_emiGES$d_hrede_15min, 3, 4),
+    sep = ":"
+  )
+```
+
+On format selon le standard de `r5r` :
+
+```{r}
+depl_emiGES$r5r_datetime <-
+  as.POSIXct(paste(depl_emiGES$r5r_date, depl_emiGES$d_hrede_15min), format = "%Y-%m-%d %H:%M")
+```
+
+## Enregistrement
+
+On sauvegarde notre table de déplacements formatée :
+
+```{r}
+saveRDS(depl_emiGES, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
+```
+
