@@ -15,3 +15,9 @@ Vous trouverez ci-dessous la liste de ces scripts.
 ### Préparation des GTFS
 
 [Vérification des dates couvertes](https://vic0sss.github.io/MTR896/gtfs/checkdates_GTFS.html)
+
+### Préparation des GTFS
+
+[Préparation des données](https://vic0sss.github.io/MTR896/distances/preparation.html)
+
+[Distances à vol d'oiseau](https://vic0sss.github.io/MTR896/distances/straightDistances.html)
