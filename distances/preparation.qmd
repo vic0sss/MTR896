@@ -407,8 +407,18 @@ write.csv(segments, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/seg
           row.names = F)
 ```
 
-On a un total de `r n_distinct(depl_emiGES$r5r_modelist)` combinaisons de modes.
+Les déplacements avec automobile + vélo vont poser un problème, car on ne dispose pas nécessairement d'un point de jonction, et `r5r` ne peut pas les traiter.
 
+Cela concerne `r sum(str_detect_vect(depl_emiGES$r5r_modelist, "CAR-BICYCLE"))` déplacements sur `r nrow(depl_emiGES)` (`r round(sum(str_detect_vect(depl_emiGES$r5r_modelist, "CAR-BICYCLE"))/nrow(depl_emiGES),3)*100`&nbsp;%).
+
+Pour ces déplacements, on retire le vélo :
+
+```{r delete-bicycle}
+depl_emiGES$r5r_modelist <- str_replace(depl_emiGES$r5r_modelist, "CAR-BICYCLE", "CAR")
+```
+
+
+On a un total de `r n_distinct(depl_emiGES$r5r_modelist)` combinaisons de modes.
 
 ## Préparation des heures
 
@@ -446,10 +456,9 @@ depl_emiGES$d_hrede <-
          depl_emiGES$d_hrede)
 ```
 
-On arrondi les heures au quart d'heure inférieur :
+On génère 3 champs pour l'heure, un à la minute près, un aux 5 minutes, et un aux 15 minutes. On commence par convertir les heures en chaînes de caractères :
 
-```{r}
-## on commence par convertir les heures en chaînes de caractères :
+```{r hrede-char}
 depl_emiGES$d_hrede_char <- 
   as.character(depl_emiGES$d_hrede)
 
@@ -458,47 +467,168 @@ depl_emiGES$d_hrede_char <-
     depl_emiGES$d_hrede_char,
     function(x) paste0(paste(rep("0", 4-str_length(x)), collapse = ""), x)
   )
+```
 
-## on convertit les heures en minutes :
+On convertit les heures en minutes :
+
+```{r minde}
 depl_emiGES$d_minde <- 
   as.numeric(str_sub(depl_emiGES$d_hrede_char, 1, 2))*60 +
   as.numeric(str_sub(depl_emiGES$d_hrede_char, 3, 4))
+```
 
-## puis on arrondit aux 15 min :
-depl_emiGES$d_minde <-
+On arrondit (toujours au créneau inférieur, grâce à la fonction `floor`) :
+
+```{r floor}
+## aux 5 min :
+depl_emiGES$d_minde_5min <-
+  floor(depl_emiGES$d_minde/5)*5
+
+## aux 15 min :
+depl_emiGES$d_minde_15min <-
   floor(depl_emiGES$d_minde/15)*15
+```
 
-## et enfin on fait le chemin inverse :
-depl_emiGES$d_hrede_15min <- 
-  paste0(
-    ifelse(str_length(as.character(depl_emiGES$d_minde%/%60)) == 1,
-           paste0("0", as.character(depl_emiGES$d_minde%/%60)),
-           as.character(depl_emiGES$d_minde%/%60)),
-    ifelse(str_length(as.character(depl_emiGES$d_minde%%60)) == 1,
-           paste0("0", as.character(depl_emiGES$d_minde%%60)),
-           as.character(depl_emiGES$d_minde%%60))
-  )
+Enfin, on fait le chemin inverse et on passe les heures aux formats "hh:mm" :
 
-depl_emiGES$d_hrede_15min <-
-  paste(
-    str_sub(depl_emiGES$d_hrede_15min, 1, 2),
-    str_sub(depl_emiGES$d_hrede_15min, 3, 4),
-    sep = ":"
+```{r hh-mm}
+depl_emiGES <- depl_emiGES %>%
+  
+  mutate(
+    d_hrede_1min = paste0(
+      ifelse(str_length(as.character(d_minde%/%60)) == 1,
+             paste0("0", as.character(d_minde%/%60)),
+             as.character(d_minde%/%60)),
+      ifelse(str_length(as.character(d_minde%%60)) == 1,
+             paste0("0", as.character(d_minde%%60)),
+             as.character(d_minde%%60))),
+    
+    d_hrede_5min = paste0(
+      ifelse(str_length(as.character(d_minde_5min%/%60)) == 1,
+             paste0("0", as.character(d_minde_5min%/%60)),
+             as.character(d_minde_5min%/%60)),
+      ifelse(str_length(as.character(d_minde_5min%%60)) == 1,
+             paste0("0", as.character(d_minde_5min%%60)),
+             as.character(d_minde_5min%%60))),
+    
+    d_hrede_15min = paste0(
+      ifelse(str_length(as.character(d_minde_15min%/%60)) == 1,
+             paste0("0", as.character(d_minde_15min%/%60)),
+             as.character(d_minde_15min%/%60)),
+      ifelse(str_length(as.character(d_minde_15min%%60)) == 1,
+             paste0("0", as.character(d_minde_15min%%60)),
+             as.character(d_minde_15min%%60))),
+    
+    across(d_hrede_1min:d_hrede_15min,
+           ~ paste(
+             str_sub(., 1, 2),
+             str_sub(., 3, 4),
+             sep = ":"
+             )
+           )
   )
 ```
 
 On format selon le standard de `r5r` :
 
-```{r}
-depl_emiGES$r5r_datetime <-
+```{r datetime}
+depl_emiGES$r5r_datetime_1min <-
+  as.POSIXct(paste(depl_emiGES$r5r_date, depl_emiGES$d_hrede_1min),  format = "%Y-%m-%d %H:%M")
+
+depl_emiGES$r5r_datetime_5min <-
+  as.POSIXct(paste(depl_emiGES$r5r_date, depl_emiGES$d_hrede_5min),  format = "%Y-%m-%d %H:%M")
+
+depl_emiGES$r5r_datetime_15min <-
   as.POSIXct(paste(depl_emiGES$r5r_date, depl_emiGES$d_hrede_15min), format = "%Y-%m-%d %H:%M")
 ```
 
+## Stratégies d'optimisation
+
+Pour les déplacements du transport en commun, on va calculer le nombre d'appels nécessaires à la fonction `r5r::detailed_itineraries` selon 4 approches :
+
+1. la fonction est appelée pour chaque déplacement;
+2. la fonction est appelée pour chaque combinaison de mode(s) + datetime (à la minute);
+3. la fonction est appelée pour chaque combinaison de mode(s) + datetime (aux 5 minutes);
+4. la fonction est appelée pour chaque combinaison de mode(s) + datetime (aux 15 minutes).
+
+```{r strategies}
+nb_modes        <- n_distinct(depl_emiGES$r5r_modelist)
+
+depl_TRANSIT <- subset(depl_emiGES, str_detect_vect(r5r_modelist, c("BUS", "RAIL", "SUBWAY")))
+
+#  NOMANCLATURE : dt = datetime ; th = theorique ; rl = reel
+nb_dt_th_1min  <- 4*24*60 + 4*60 # 4 jours + 4 heures après minuit pour le 5e jour
+nb_dt_th_5min  <- 4*24*12 + 4*12
+nb_dt_th_15min <- 4*24*4  + 4*4
+
+df.strategies1 <- data.frame(
+  "strategie"    = "Tous les déplacements",
+  "pas_de_temps" = NA,
+  "nb_appels_th" = nrow(depl_TRANSIT),
+  "nb_appels_rl" = nrow(depl_TRANSIT),
+  "diff_th"      = NA,
+  "diff_rl"      = NA
+)
+
+df.strategies2_4 <- data.frame(
+  "strategie"    = "Combinaisons mode(s) + datetime",
+  "pas_de_temps" = c(1, 5, 15),
+  "nb_appels_th" = NA,
+  "nb_appels_rl" = NA,
+  "diff_th"      = NA,
+  "diff_rl"      = NA
+)
+
+df.strategies2_4$nb_appels_th <- pmin(nb_modes*(4*24*60 + 4*60)/df.strategies2_4$pas_de_temps,
+                                      nrow(depl_TRANSIT))
+
+df.strategies2_4$nb_appels_rl <- 
+  c(
+    n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_1min)),
+    n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_5min)),
+    n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_15min))
+  )
+
+df.strategies2_4$diff_th <- round((df.strategies2_4$nb_appels_th - nrow(depl_TRANSIT))/nrow(depl_TRANSIT), 3)
+df.strategies2_4$diff_rl <- round((df.strategies2_4$nb_appels_rl - nrow(depl_TRANSIT))/nrow(depl_TRANSIT), 3)
+
+df.strategies <- rbind(df.strategies1,
+                       df.strategies2_4)
+
+rm(df.strategies1, df.strategies2_4)
+```
+
+```{r print-614, echo =F}
+datatable(df.strategies,
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+
+
 ## Enregistrement
 
-On sauvegarde notre table de déplacements formatée :
+On nos tables, en séparant TC et automobile :
 
-```{r}
-saveRDS(depl_emiGES, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
+```{r save}
+depl_CAR <- subset(depl_emiGES, r5r_modelist == "CAR")
+
+saveRDS(depl_emiGES,  "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
+saveRDS(depl_TRANSIT, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_TRANSIT.Rds")
+saveRDS(depl_CAR,     "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_CAR.Rds")
 ```
 
