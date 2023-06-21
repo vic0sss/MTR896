@@ -12,11 +12,13 @@ Vous trouverez ci-dessous la liste de ces scripts.
 
 [Fusion des données de la SAAQ et de Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/fusion_SAAQ_RessourcesCanada.html)
 
-### Préparation des GTFS
+### Traitement des GTFS
 
 [Vérification des dates couvertes](https://vic0sss.github.io/MTR896/gtfs/checkdates_GTFS.html)
 
-### Préparation des GTFS
+[Préparation des fichiers GTFS](https://vic0sss.github.io/MTR896/gtfs/preparation_GTFS.html)
+
+### Calcul des distances
 
 [Préparation des données](https://vic0sss.github.io/MTR896/distances/preparation.html)
 
