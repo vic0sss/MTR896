@@ -1,0 +1,71 @@
+---
+title: "Calcul des distances à vol d'oiseau"
+author: "Victor Nunzi"
+date: '2023-06-20'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à calculer la distance à vol d'oiseau de chaque déplacement sélectionné.
+
+Date du dernier *render* : `r Sys.Date()`
+
+## Librairies et fonctions {-}
+
+```{r lib-fonctions, message=F, warning=F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Données
+
+On commence par charger les déplacements préalablement préparés :
+
+```{r data-eod-18}
+depl <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
+```
+
+```{r load-eod, eval=F, echo=F}
+sf.OD2018 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-limiteOD/TERR_OD2018.shp", quiet= T)
+```
+
+
+## Origines et distinations
+
+On convertit les déplacements en deux table de `simple features`, respectivement avec les origines et les destinations :
+
+```{r ori-des}
+sf.origines <- st_as_sf(depl[c("ipere", "d_orilat", "d_orilon")],
+                        coords = c("d_orilon", "d_orilat"),
+                        crs = 4326)
+
+sf.destinations <- st_as_sf(depl[c("ipere", "d_deslat", "d_deslon")],
+                            coords = c("d_deslon", "d_deslat"),
+                            crs = 4326)
+```
+
+On calcule les distances :
+
+```{r calc-dist}
+depl$d_dist_straight <- st_distance(sf.origines,
+                                    sf.destinations,
+                                    by_element = TRUE)
+
+depl$d_dist_straight <- round(as.numeric(depl$d_dist_straight))
+```
+
+## Enregistrement
+
+On enregistre : 
+```{r save-depl}
+saveRDS(depl,            "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/deplacements.Rds")
+saveRDS(sf.origines,     "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/origines.Rds")
+saveRDS(sf.destinations, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/destinations.Rds")
+```
