@@ -1,0 +1,60 @@
+---
+title: "Préparation des données GTFS"
+author: "Victor Nunzi"
+date: '2023-06-20'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à préparer les données GTFS pour l'utilisation de `r5r`. Il y a deux traitements à effectuer :
+
+1. générer une table `stop_times` pour les données de la STM, à partir de la table `frequencies`;
+2. convertir certains codes de route dans le bon format (merci à Jérémy Gelb. pour le script).
+
+Date du dernier *render* : `r Sys.Date()`
+
+## Librairies et fonctions {-}
+
+```{r lib-fonctions, message=F, warning=F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Répertoire
+
+```{r setwd}
+setwd("C:/Users/victo/OneDrive - ARTM/Documents/Travail/02_Donnees/04_MTR896/r5r_core/v1 - final")
+```
+
+
+## Conversion de `frequencies` en `stop_times`
+
+```{r frequencies-to-stoptimes, eval=FALSE}
+freq.GTFS      <- read_gtfs("stm180823.zip")
+stoptimes.GTFS <- frequencies_to_stop_times(freq.GTFS)
+
+write_gtfs(stoptimes.GTFS, "stm180823.zip")
+```
+
+
+## Nettoyage
+
+```{r clean-gtfs, eval=F}
+all_gtfs <- list.files(pattern = "*.zip", full.names = TRUE)
+
+for (gtfs in all_gtfs){
+  feed <- read_gtfs(gtfs)
+  # print(unique(feed$routes$route_type))
+  feed$routes$route_type <- ifelse(
+    feed$routes$route_type %in% c(1501, 700), 3, feed$routes$route_type
+  )
+  write_gtfs(feed, gtfs)
+}
+```
