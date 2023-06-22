@@ -1,5 +1,6 @@
 ## Chargement de l'ensemble des librairies nécessaires au traitement
 
+library(MASS)
 library(tidyverse)
 library(tidytransit)
 library(knitr)
@@ -12,3 +13,4 @@ library(tmap)
 library(stringi)
 library(r5r)
 library(gtfstools)
+
