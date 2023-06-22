@@ -1,0 +1,119 @@
+---
+title: "Traitement des distances"
+author: "Victor Nunzi"
+date: '2023-06-20'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant à traiter les distances obtenues en sortie de `detailed_itineraries`.
+
+Date du dernier *render* : `r Sys.Date()`
+
+## Librairies et fonctions {-}
+
+```{r lib-fonctions, message=F, warning=F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Données
+
+On commence par charger l'ensemble des déplacements :
+
+```{r read-31}
+depl_COMPLETE         <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
+RESULTS_CAR           <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_CAR.csv")
+RESULTS_TRANSIT_1min  <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_TRANSIT_1min.csv")
+```
+
+On *subset* les colonnes qui nous intéressent :
+
+```{r subset-37}
+depl_distances <- depl_COMPLETE %>%
+  dplyr::select(
+    c(
+      ipere,
+      m_numero,
+      p_rang,
+      d_modeseq,
+      r5r_modelist,
+      d_dist_straight
+      )
+    )
+```
+
+## Distances en voiture
+
+On commence par ajouter les distances réseau pour les déplacements en automobile uniquement :
+
+```{r dist-car}
+depl_distances$d_dist_car_ntwk <- 
+  RESULTS_CAR$total_distance[match(depl_distances$ipere,
+                                   RESULTS_CAR$from_id)]
+```
+
+On affiche les distances réseau en fonction des distances à vol d'oiseau, pour un sous-échantillons de 1000 points :
+
+```{r plot-car}
+set.seed(20230621)
+
+distances_car <- subset(depl_distances, !is.na(d_dist_straight) & !is.na(d_dist_car_ntwk))
+
+distances_car_sample <- distances_car[sample(1000),]
+
+ggplot(distances_car_sample, aes(d_dist_straight, d_dist_car_ntwk)) +
+  geom_point()
+```
+
+On vérifie la corrélation :
+
+```{r cor-car}
+cor.test(distances_car$d_dist_straight, distances_car$d_dist_car_ntwk, conf.level = .95)
+```
+
+On calcule enfin l'indice de détour à l'aide d'une régression linéaire :
+
+```{r lm-car}
+summary(lm(d_dist_car_ntwk ~ d_dist_straight, distances_car))
+```
+
+
+
+## Distances en transports en commun
+
+On commence par manipuler les distances en transport en commun pour faire ressortir le temps total par mode :
+
+```{r distances-transit, message=FALSE}
+distances_TC <- RESULTS_TRANSIT_1min %>%
+  dplyr::select(c(
+    from_id, total_distance, segment, mode, distance
+  )) %>%
+  group_by(from_id, mode) %>%
+  summarise(
+    distance_mode = sum(distance)
+  ) %>% 
+  pivot_wider(
+    id_cols = from_id,
+    names_from = mode,
+    values_from = distance_mode
+  )
+```
+
+Il ressort de ce traitement que `r5r` a très largement préféré la marche aux différents TC, ce qui est problématique car cela ne correspond à ce qui a été déclaré par les répondant(e)s.
+
+En effet, `r sum(distances_TC$WALK >= 1000, na.rm =T)` déplacements comptent plus de 1 km de marche (`r round(sum(distances_TC$WALK >= 1000, na.rm =T)/nrow(distances_TC),3)*100`&nbsp;%), et `r sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))` ne font pas du tout appels aux TC (`r round(sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))/nrow(distances_TC),3)*100`&nbsp;%).
+
+Pour pallier cela, deux solutions peuvent être envisagées :
+
+1. pénaliser la marche (en termes de vitesse et de temps maximal par trajet) pour favoriser le TC;
+2. calculer multiples options par trajet, et sélectionner par la suite celle qui correspond le mieux à la déclaration d'origine.
+
+Plus simple à mettre en place et moins coûteuse en termes de temps de calcul, la première option sera explorée dans un premier temps.
