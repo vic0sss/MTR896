@@ -32,8 +32,19 @@ On commence par charger les déplacements préalablement préparés :
 depl <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
 ```
 
-```{r load-eod, eval=F, echo=F}
-sf.OD2018 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-limiteOD/TERR_OD2018.shp", quiet= T)
+```{r load-eod, echo=F}
+sf.OD2018    <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-limiteOD/TERR_OD2018.shp", quiet= T)
+sf.RA.OD2018 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-RA8/RA8_OD2018.shp",       quiet= T)
+
+sf.RA.OD2018.4326 <- st_transform(sf.RA.OD2018, crs = 4326)
+```
+
+```{r map, echo=FALSE}
+sf.RA.OD2018$RA <- paste(sf.RA.OD2018$RA8_2018,
+                            sf.RA.OD2018$RA8_2018_N, 
+                            sep = " - ")
+
+st_write(sf.RA.OD2018, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/QGIS/RA8_OD2018_labels.shp", quiet = T)
 ```
 
 
@@ -42,13 +53,18 @@ sf.OD2018 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/ge
 On convertit les déplacements en deux table de `simple features`, respectivement avec les origines et les destinations :
 
 ```{r ori-des}
-sf.origines <- st_as_sf(depl[c("ipere", "d_orilat", "d_orilon")],
-                        coords = c("d_orilon", "d_orilat"),
-                        crs = 4326)
+sf.origines     <- st_as_sf(depl[c("ipere", "d_orilat", "d_orilon")],
+                            coords = c("d_orilon", "d_orilat"),
+                            crs = 4326)
 
 sf.destinations <- st_as_sf(depl[c("ipere", "d_deslat", "d_deslon")],
                             coords = c("d_deslon", "d_deslat"),
                             crs = 4326)
+
+sf.origines     <- st_join(x = sf.origines, y = sf.RA.OD2018.4326[c("RA8_2018")],
+                           join = st_within)
+sf.destinations <- st_join(x = sf.destinations, y = sf.RA.OD2018.4326[c("RA8_2018")],
+                           join = st_within)
 ```
 
 On calcule les distances :
@@ -60,6 +76,14 @@ depl$d_dist_straight <- st_distance(sf.origines,
 
 depl$d_dist_straight <- round(as.numeric(depl$d_dist_straight))
 ```
+
+On en profite pour ajouter les RA d'origine et de destination :
+
+```{r ra}
+depl$d_orira8 <- sf.origines$RA8_2018[match(depl$ipere,     sf.origines$ipere)]
+depl$d_desra8 <- sf.destinations$RA8_2018[match(depl$ipere, sf.destinations$ipere)]
+```
+
 
 ## Enregistrement
 
