@@ -17,6 +17,13 @@ Script *Quarto* visant à traiter les distances obtenues en sortie de `detailed_
 
 Date du dernier *render* : `r Sys.Date()`
 
+```{r render, eval=FALSE, echo=FALSE}
+## si besoin (✖ Column `d_dist_straight` doesn't exist.) :
+quarto::quarto_render("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/straightDistances.qmd")
+```
+
+
+
 ## Librairies et fonctions {-}
 
 ```{r lib-fonctions, message=F, warning=F}
@@ -29,9 +36,11 @@ source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/
 On commence par charger l'ensemble des déplacements :
 
 ```{r read-31}
-depl_COMPLETE         <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
-RESULTS_CAR           <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_CAR.csv")
-RESULTS_TRANSIT_1min  <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_TRANSIT_1min.csv")
+depl_COMPLETE            <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
+depl_TRANSIT             <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_TRANSIT.Rds")
+RESULTS_CAR              <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_CAR.csv")
+RESULTS_TRANSIT_1min     <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_TRANSIT_1min.csv")
+RESULTS_TRANSIT_1min_WP  <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/distances/RESULTS_TRANSIT_1min_WP.csv")
 ```
 
 On *subset* les colonnes qui nous intéressent :
@@ -43,6 +52,8 @@ depl_distances <- depl_COMPLETE %>%
       ipere,
       m_numero,
       p_rang,
+      d_orira8,
+      d_desra8,
       d_modeseq,
       r5r_modelist,
       d_dist_straight
@@ -50,9 +61,13 @@ depl_distances <- depl_COMPLETE %>%
     )
 ```
 
-## Distances en voiture
+Nombre de déplacements : `r nrow(depl_distances)`
 
-On commence par ajouter les distances réseau pour les déplacements en automobile uniquement :
+## Traitements des itinéraires 
+
+### Automobiles
+
+On ajoute les distances réseau pour les déplacements en automobile uniquement :
 
 ```{r dist-car}
 depl_distances$d_dist_car_ntwk <- 
@@ -60,34 +75,8 @@ depl_distances$d_dist_car_ntwk <-
                                    RESULTS_CAR$from_id)]
 ```
 
-On affiche les distances réseau en fonction des distances à vol d'oiseau, pour un sous-échantillons de 1000 points :
 
-```{r plot-car}
-set.seed(20230621)
-
-distances_car <- subset(depl_distances, !is.na(d_dist_straight) & !is.na(d_dist_car_ntwk))
-
-distances_car_sample <- distances_car[sample(1000),]
-
-ggplot(distances_car_sample, aes(d_dist_straight, d_dist_car_ntwk)) +
-  geom_point()
-```
-
-On vérifie la corrélation :
-
-```{r cor-car}
-cor.test(distances_car$d_dist_straight, distances_car$d_dist_car_ntwk, conf.level = .95)
-```
-
-On calcule enfin l'indice de détour à l'aide d'une régression linéaire :
-
-```{r lm-car}
-summary(lm(d_dist_car_ntwk ~ d_dist_straight, distances_car))
-```
-
-
-
-## Distances en transports en commun
+### Transports en commun
 
 On commence par manipuler les distances en transport en commun pour faire ressortir le temps total par mode :
 
@@ -109,7 +98,13 @@ distances_TC <- RESULTS_TRANSIT_1min %>%
 
 Il ressort de ce traitement que `r5r` a très largement préféré la marche aux différents TC, ce qui est problématique car cela ne correspond à ce qui a été déclaré par les répondant(e)s.
 
-En effet, `r sum(distances_TC$WALK >= 1000, na.rm =T)` déplacements comptent plus de 1 km de marche (`r round(sum(distances_TC$WALK >= 1000, na.rm =T)/nrow(distances_TC),3)*100`&nbsp;%), et `r sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))` ne font pas du tout appels aux TC (`r round(sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))/nrow(distances_TC),3)*100`&nbsp;%).
+En effet, on a :
+
+`r total_TC <- nrow(depl_TRANSIT)`
+
+- `r nrow(distances_TC)` déplacements avec un résultat (`r round(nrow(distances_TC)/total_TC,3)*100`&nbsp;%);
+- `r sum(distances_TC$WALK >= 1000, na.rm =T)` déplacements comptent plus de 1 km de marche (`r round(sum(distances_TC$WALK >= 1000, na.rm =T)/total_TC,3)*100`&nbsp;%);
+- `r sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))` déplacement sans utilisation du TC (`r round(sum(is.na(distances_TC$BUS) & is.na(distances_TC$SUBWAY) & is.na(distances_TC$RAIL))/total_TC,3)*100`&nbsp;%).
 
 Pour pallier cela, deux solutions peuvent être envisagées :
 
@@ -117,3 +112,673 @@ Pour pallier cela, deux solutions peuvent être envisagées :
 2. calculer multiples options par trajet, et sélectionner par la suite celle qui correspond le mieux à la déclaration d'origine.
 
 Plus simple à mettre en place et moins coûteuse en termes de temps de calcul, la première option sera explorée dans un premier temps.
+
+Résultats de cette pénalité pour la marche :
+
+```{r distances-transit-wp, message=FALSE}
+#| code-fold: true
+
+distances_TC_WP <- RESULTS_TRANSIT_1min_WP %>%
+  dplyr::select(c(
+    from_id, total_distance, segment, mode, distance
+  )) %>%
+  group_by(from_id, mode) %>%
+  summarise(
+    distance_mode = sum(distance)
+  ) %>% 
+  pivot_wider(
+    id_cols = from_id,
+    names_from = mode,
+    values_from = distance_mode
+  )
+```
+
+
+- `r nrow(distances_TC_WP)` déplacements avec un résultat (`r round(nrow(distances_TC_WP)/total_TC,3)*100`&nbsp;%);
+- `r sum(distances_TC_WP$WALK >= 1000, na.rm =T)` déplacements comptent plus de 1 km de marche (`r round(sum(distances_TC_WP$WALK >= 1000, na.rm =T)/total_TC,3)*100`&nbsp;%);
+- `r sum(is.na(distances_TC_WP$BUS) & is.na(distances_TC_WP$SUBWAY) & is.na(distances_TC_WP$RAIL))` déplacement sans utilisation du TC (`r round(sum(is.na(distances_TC_WP$BUS) & is.na(distances_TC_WP$SUBWAY) & is.na(distances_TC_WP$RAIL))/total_TC,3)*100`&nbsp;%).
+
+
+On a perdu de nombreux déplacements, on va donc compléter notre table avec pénalité à partir de notre table sans pénalité, pour les déplacements qui n'avaient pas de résultats :
+
+```{r distances-transit-bind, message=FALSE}
+distances_TC_BIND <- rbind(distances_TC_WP,
+                           subset(distances_TC, !(from_id %in% distances_TC_WP$from_id)))
+```
+
+Résumé :
+
+- déplacements avec plus de 1 km de marche : `r sum(distances_TC_BIND$WALK >= 1000, na.rm =T)` (`r round(sum(distances_TC_BIND$WALK >= 1000, na.rm =T)/nrow(distances_TC_BIND),3)*100`&nbsp;%);
+- déplacements sans TC : `r sum(is.na(distances_TC_BIND$BUS) & is.na(distances_TC_BIND$SUBWAY) & is.na(distances_TC_BIND$RAIL))` (`r round(sum(is.na(distances_TC_BIND$BUS) & is.na(distances_TC_BIND$SUBWAY) & is.na(distances_TC_BIND$RAIL))/nrow(distances_TC_BIND),3)*100`&nbsp;%).
+
+## Fusion des résultats
+
+### Fusion
+
+On place dans un seul `dataframe` l'ensemble des distances :
+
+```{r match-distances}
+depl_distances$d_dist_car_ntwk <- 
+  ifelse(is.na(depl_distances$d_dist_car_ntwk),
+         distances_TC_BIND$CAR[match(depl_distances$ipere, distances_TC_BIND$from_id)],
+         depl_distances$d_dist_car_ntwk)
+
+
+depl_distances$d_dist_bus_ntwk     <- distances_TC_BIND$BUS[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+depl_distances$d_dist_walk_ntwk    <- distances_TC_BIND$WALK[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+depl_distances$d_dist_subway_ntwk  <- distances_TC_BIND$SUBWAY[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+depl_distances$d_dist_rail_ntwk    <- distances_TC_BIND$RAIL[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+depl_distances$d_dist_bicycle_ntwk <- distances_TC_BIND$BICYCLE[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+
+depl_distances$d_dist_ntwk <- 
+  rowSums(depl_distances %>% dplyr::select(d_dist_car_ntwk:d_dist_bicycle_ntwk), na.rm = T)
+```
+
+On crée une nouvelle table en enlevant les déplacements qui n'ont pas donné de résultats dans `r5r`&nbsp;:
+
+```{r depl-dist-results}
+depl_dist_RESULTS <- subset(depl_distances, d_dist_ntwk != 0)
+```
+
+Cela comprend `r nrow(depl_dist_RESULTS)` déplacements (`r round(nrow(depl_dist_RESULTS)/nrow(depl_distances), 3)*100`&nbsp;% du total).
+
+### Corrélation générale
+
+**Coefficient de corrélation (Pearson) :**
+
+```{r cor-full}
+#| code-fold: true
+
+cor_full <- cor.test(depl_dist_RESULTS$d_dist_straight, depl_dist_RESULTS$d_dist_ntwk, conf.level = .95)
+r_full <- round(unname(cor_full$estimate), 3)
+```
+
+```{r print-243, echo=FALSE}
+print(paste0("r = ", r_full))
+```
+
+
+**Régression linéaire sans condition sur l'ordonnée à l'origine :**
+
+```{r lm-full}
+#| code-fold: true
+
+lm_full <- lm(d_dist_ntwk ~ d_dist_straight, depl_dist_RESULTS)
+
+slope_full <- round(unname(lm_full$coefficients[2]), 3)
+inter_full <- round(unname(lm_full$coefficients[1]))
+
+depl_dist_RESULTS$predi <- depl_dist_RESULTS$d_dist_straight*slope_full + inter_full
+
+rss      <- sum((depl_dist_RESULTS$predi - depl_dist_RESULTS$d_dist_ntwk) ^ 2)  ## residual sum of squares
+tss      <- sum((depl_dist_RESULTS$d_dist_ntwk - mean(depl_dist_RESULTS$d_dist_ntwk)) ^ 2)  ## total sum of squares
+rsq_full <- round(1 - rss/tss, 3)
+```
+
+```{r print-228, echo=FALSE}
+print(paste0("slope = ",     slope_full))
+print(paste0("intercept = ", inter_full))
+print(paste0("R^2 = ",       rsq_full))
+```
+
+
+
+**Régression linéaire en forçant une ordonnée à l'origine de 0 :**
+
+```{r caret-regression-full}
+#| code-fold: true
+
+lm_full_i0 <- train(d_dist_ntwk ~ d_dist_straight,
+                    data = depl_dist_RESULTS,
+                    method  = "lm",
+                    tuneGrid  = expand.grid(intercept = FALSE))
+
+slope_full_i0 <- round(unname(lm_full_i0$finalModel$coefficients), 3)
+
+depl_dist_RESULTS$predi_i0 <- depl_dist_RESULTS$d_dist_straight*slope_full_i0
+
+rss         <- sum((depl_dist_RESULTS$predi_i0 - depl_dist_RESULTS$d_dist_ntwk) ^ 2)          ## residual sum of squares
+tss         <- sum((depl_dist_RESULTS$d_dist_ntwk - mean(depl_dist_RESULTS$d_dist_ntwk)) ^ 2) ## total sum of squares
+rsq_full_i0 <- round(1 - rss/tss, 3)
+```
+
+```{r print-258, echo=FALSE}
+print(paste0("slope = ",     slope_full_i0))
+print("intercept = 0")
+print(paste0("R^2 = ",       rsq_full_i0))
+```
+
+**Graphique (n = `r nrow(depl_dist_RESULTS)`) :**
+
+```{r plot-lm-full}
+#| code-fold: true
+
+set.seed(20230621)
+
+ggplot(depl_dist_RESULTS[sample(nrow(depl_dist_RESULTS), 1000),], aes(d_dist_straight, d_dist_ntwk)) +
+  geom_point() +
+  geom_abline(slope = slope_full,    intercept = inter_full, color = "red") +
+  geom_abline(slope = slope_full_i0, intercept = 0,          color = "blue") + 
+  geom_abline(slope = 1) +
+  geom_text(aes(x = 1000, y = 90000), color = "blue", label = paste0("y == ",
+                                                                     as.character(slope_full_i0),
+                                                                     "*x*\";\"~R^2 ==",
+                                                                     as.character(rsq_full_i0)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 85000), color = "red",  label = paste0("y == ",
+                                                                     as.character(slope_full),
+                                                                     "*x + ",
+                                                                     as.character(inter_full),
+                                                                     "*\";\"~R^2 ==",
+                                                                     as.character(rsq_full)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 80000), label = "y == x", parse = T, hjust = 0) +
+  labs(x = "d_dist_straight (m)", y = "d_dist_ntwk (m)")
+```
+
+### Modes exclusifs
+
+On attribue à chaque itinéraire un mode exclusif parmi les modes suivants :
+
+- voiture;
+- bus;
+- métro;
+- train;
+- vélo;
+- marche;
+- multimode.
+
+```{r modes-exclu}
+depl_dist_RESULTS[is.na(depl_dist_RESULTS)] <- 0
+
+depl_dist_RESULTS$i_nbmodescat_pasmarche <- 
+  rowSums(
+    depl_dist_RESULTS %>% 
+      dplyr::select(c(d_dist_car_ntwk:d_dist_bicycle_ntwk)) %>%
+      dplyr::select(-d_dist_walk_ntwk) %>%
+      mutate_all(~ . > 0)
+  )
+
+depl_dist_RESULTS$i_modeexclu <- 
+  case_when(
+    depl_dist_RESULTS$i_nbmodescat_pasmarche == 0 ~ "marche",
+    depl_dist_RESULTS$i_nbmodescat_pasmarche >= 2 ~ "multi",
+    depl_dist_RESULTS$i_nbmodescat_pasmarche == 1 ~ 
+      case_when(
+        depl_dist_RESULTS$d_dist_car_ntwk     > 0 ~ "voiture",
+        depl_dist_RESULTS$d_dist_bus_ntwk     > 0 ~ "bus",
+        depl_dist_RESULTS$d_dist_subway_ntwk  > 0 ~ "metro",
+        depl_dist_RESULTS$d_dist_rail_ntwk    > 0 ~ "train",
+        depl_dist_RESULTS$d_dist_bicycle_ntwk > 0 ~ "velo"
+      )
+  )
+
+print(table(depl_dist_RESULTS$i_modeexclu, useNA = "ifany"))
+print(round(table(depl_dist_RESULTS$i_modeexclu, useNA = "ifany")/sum(table(depl_dist_RESULTS$i_modeexclu, useNA = "ifany")), 3))
+```
+
+
+
+
+## Analyse des itinéraires automobiles
+
+*Subset :*
+
+```{r subset-car}
+itineraires_voiture <- subset(depl_dist_RESULTS, i_modeexclu == "voiture")
+```
+
+
+**Coefficient de corrélation (Pearson) :**
+
+```{r cor-car}
+#| code-fold: true
+
+cor_car <- cor.test(itineraires_voiture$d_dist_straight, itineraires_voiture$d_dist_ntwk, conf.level = .95)
+r_car <- round(unname(cor_car$estimate), 3)
+```
+
+```{r print-328, echo=FALSE}
+print(paste0("r = ", r_car))
+```
+
+
+**Régression linéaire sans condition sur l'ordonnée à l'origine :**
+
+```{r lm-car}
+#| code-fold: true
+
+lm_car <- lm(d_dist_ntwk ~ d_dist_straight, itineraires_voiture)
+
+slope_car <- round(unname(lm_car$coefficients[2]), 3)
+inter_car <- round(unname(lm_car$coefficients[1]))
+
+itineraires_voiture$predi <- itineraires_voiture$d_dist_straight*slope_car + inter_car
+
+rss     <- sum((itineraires_voiture$predi       - itineraires_voiture$d_dist_ntwk) ^ 2)          ## residual sum of squares
+tss     <- sum((itineraires_voiture$d_dist_ntwk - mean(itineraires_voiture$d_dist_ntwk)) ^ 2) ## total sum of squares
+rsq_car <- round(1 - rss/tss, 3)
+```
+
+```{r print-345, echo=FALSE}
+print(paste0("slope = ",     slope_car))
+print(paste0("intercept = ", inter_car))
+print(paste0("R^2 = ",       rsq_car))
+```
+
+
+**Régression linéaire en forçant une ordonnée à l'origine de 0 :**
+
+```{r caret-regression-car}
+#| code-fold: true
+
+lm_car_i0 <- train(d_dist_ntwk ~ d_dist_straight,
+                    data = itineraires_voiture,
+                    method  = "lm",
+                    tuneGrid  = expand.grid(intercept = FALSE))
+
+slope_car_i0 <- round(unname(lm_car_i0$finalModel$coefficients), 3)
+
+itineraires_voiture$predi_i0 <- itineraires_voiture$d_dist_straight*slope_car_i0
+
+rss        <- sum((itineraires_voiture$predi_i0    - itineraires_voiture$d_dist_ntwk) ^ 2)       ## residual sum of squares
+tss        <- sum((itineraires_voiture$d_dist_ntwk - mean(itineraires_voiture$d_dist_ntwk)) ^ 2) ## total sum of squares
+rsq_car_i0 <- round(1 - rss/tss, 3)
+```
+
+```{r print-365, echo=FALSE}
+print(paste0("slope = ",     slope_car_i0))
+print("intercept = 0")
+print(paste0("R^2 = ",       rsq_car_i0   ))
+```
+
+
+
+**Graphique (n = `r nrow(itineraires_voiture)`) :**
+
+```{r plot-lm-car}
+#| code-fold: true
+
+set.seed(20230621)
+
+ggplot(itineraires_voiture[sample(nrow(itineraires_voiture), 1000),], aes(d_dist_straight, d_dist_ntwk)) +
+  geom_point() +
+  geom_abline(slope = slope_car,    intercept = inter_car, color = "red") +
+  geom_abline(slope = slope_car_i0, intercept = 0,         color = "blue") + 
+  geom_abline(slope = 1) +
+  geom_text(aes(x = 1000, y = 90000), color = "blue", label = paste0("y == ",
+                                                                     as.character(slope_car_i0),
+                                                                     "*x*\";\"~R^2 ==",
+                                                                     as.character(rsq_car_i0)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 85000), color = "red",  label = paste0("y == ",
+                                                                     as.character(slope_car),
+                                                                     "*x + ",
+                                                                     as.character(inter_car),
+                                                                     "*\";\"~R^2 ==",
+                                                                     as.character(rsq_car)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 80000), label = "y == x", parse = T, hjust = 0) +
+  labs(x = "d_dist_straight (m)", y = "d_dist_ntwk (m)")
+```
+
+
+## Analyse des itinéraires impliquant le TC
+
+*Subset :*
+
+```{r subset-tc}
+itineraires_tc <- subset(depl_dist_RESULTS, 
+                         d_dist_bus_ntwk      > 0 |
+                           d_dist_subway_ntwk > 0 |
+                           d_dist_rail_ntwk   > 0)
+```
+
+**Coefficient de corrélation (Pearson) :**
+
+```{r cor-tc}
+#| code-fold: true
+
+cor_tc <- cor.test(itineraires_tc$d_dist_straight, itineraires_tc$d_dist_ntwk, conf.level = .95)
+r_tc <- round(unname(cor_tc$estimate), 3)
+```
+
+```{r print-420, echo=FALSE}
+print(paste0("r = ", r_tc))
+```
+
+
+
+**Régression linéaire sans condition sur l'ordonnée à l'origine :**
+
+```{r lm-tc}
+#| code-fold: true
+
+lm_tc <- lm(d_dist_ntwk ~ d_dist_straight, itineraires_tc)
+
+slope_tc <- round(unname(lm_tc$coefficients[2]), 3)
+inter_tc <- round(unname(lm_tc$coefficients[1]))
+
+itineraires_tc$predi <- itineraires_tc$d_dist_straight*slope_tc + inter_tc
+
+rss     <- sum((itineraires_tc$predi       - itineraires_tc$d_dist_ntwk) ^ 2)       ## residual sum of squares
+tss     <- sum((itineraires_tc$d_dist_ntwk - mean(itineraires_tc$d_dist_ntwk)) ^ 2) ## total sum of squares
+rsq_tc  <- round(1 - rss/tss, 3)
+```
+
+```{r print-438, echo=FALSE}
+print(paste0("slope = ",     slope_tc))
+print(paste0("intercept = ", inter_tc))
+print(paste0("R^2 = ",       rsq_tc))
+```
+
+
+
+**Régression linéaire en forçant une ordonnée à l'origine de 0 :**
+
+```{r tcet-regression-tc}
+#| code-fold: true
+
+lm_tc_i0 <- train(d_dist_ntwk ~ d_dist_straight,
+                  data = itineraires_tc,
+                  method  = "lm",
+                  tuneGrid  = expand.grid(intercept = FALSE))
+
+slope_tc_i0 <- round(unname(lm_tc_i0$finalModel$coefficients), 3)
+
+itineraires_tc$predi_i0 <- itineraires_tc$d_dist_straight*slope_tc_i0
+
+rss        <- sum((itineraires_tc$predi_i0    - itineraires_tc$d_dist_ntwk) ^ 2)       ## residual sum of squares
+tss        <- sum((itineraires_tc$d_dist_ntwk - mean(itineraires_tc$d_dist_ntwk)) ^ 2) ## total sum of squares
+rsq_tc_i0 <- round(1 - rss/tss, 3)
+```
+
+```{r print-460, echo=FALSE}
+print(paste0("slope = ",     slope_tc_i0))
+print("intercept = 0")
+print(paste0("R^2 = ",       rsq_tc_i0))
+```
+
+
+
+
+**Graphique (n = `r nrow(itineraires_tc)`) :**
+
+```{r plot-lm-tc}
+#| code-fold: true
+
+set.seed(20230621)
+
+ggplot(itineraires_tc[sample(nrow(itineraires_tc), 1000),], aes(d_dist_straight, d_dist_ntwk)) +
+  geom_point() +
+  geom_abline(slope = slope_tc,    intercept = inter_tc, color = "red") +
+  geom_abline(slope = slope_tc_i0, intercept = 0,         color = "blue") + 
+  geom_abline(slope = 1) +
+  geom_text(aes(x = 1000, y = 90000), color = "blue", label = paste0("y == ",
+                                                                     as.character(slope_tc_i0),
+                                                                     "*x*\";\"~R^2 ==",
+                                                                     as.character(rsq_tc_i0)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 85000), color = "red",  label = paste0("y == ",
+                                                                     as.character(slope_tc),
+                                                                     "*x + ",
+                                                                     as.character(inter_tc),
+                                                                     "*\";\"~R^2 ==",
+                                                                     as.character(rsq_tc)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 80000), label = "y == x", parse = T, hjust = 0) +
+  labs(x = "d_dist_straight (m)", y = "d_dist_ntwk (m)")
+```
+
+## Résumé par modes
+
+On réalise les régressions linéaires pour chaque mode exclusif :
+
+```{r summary-bymode, eval=FALSE}
+#| code-fold: true
+
+# On groupe par modes :
+gc()
+ts1_sumbymodes <- Sys.time()
+
+summary_bymodes <- depl_dist_RESULTS %>%
+  group_by(i_modeexclu) %>%
+  summarise(n = n()) %>%
+  mutate(
+    coeffs = sapply(
+      i_modeexclu,
+      function(modeexclu){
+        temp.subset <- subset(depl_dist_RESULTS, i_modeexclu == modeexclu)
+        
+        lm <- train(d_dist_ntwk ~ d_dist_straight,
+                    data = temp.subset,
+                    method  = "lm",
+                    tuneGrid  = expand.grid(intercept = FALSE))
+
+        slope <- round(unname(lm$finalModel$coefficients), 3)
+
+        temp.subset$predi <- temp.subset$d_dist_straight*slope
+
+        rss <- sum((temp.subset$predi       - temp.subset$d_dist_ntwk) ^ 2)       ## residual sum of squares
+        tss <- sum((temp.subset$d_dist_ntwk - mean(temp.subset$d_dist_ntwk)) ^ 2) ## total sum of squares
+        rsq <- round(1 - rss/tss, 3)
+        
+        return(paste(slope, rsq))
+      }
+    )
+  )
+
+ts2_sumbymodes <- Sys.time()
+
+print(ts2_sumbymodes - ts1_sumbymodes)
+
+save(ts1_sumbymodes, ts2_sumbymodes, summary_bymodes,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/sumbymodes.RData")
+```
+
+```{r load-573, echo=FALSE}
+load("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/sumbymodes.RData")
+```
+
+```{r dt-577, echo=FALSE}
+datatable(summary_bymodes,
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+## Résumé par régions d'origines et de destinations
+
+```{r summary-byra, eval=FALSE}
+#| code-fold: true
+
+# On groupe par modes :
+gc()
+ts1_sumbyra <- Sys.time()
+
+summary_byra <- depl_dist_RESULTS %>%
+  group_by(d_orira8, d_desra8) %>%
+  summarise(n = n()) %>%
+  mutate(
+    coeffs = sapply(
+      paste(d_orira8, d_desra8),
+      function(ra_od){
+        temp.subset <- subset(depl_dist_RESULTS, paste(d_orira8, d_desra8) == ra_od)
+        
+        lm <- train(d_dist_ntwk ~ d_dist_straight,
+                    data = temp.subset,
+                    method  = "lm",
+                    tuneGrid  = expand.grid(intercept = FALSE))
+        
+        slope <- round(unname(lm$finalModel$coefficients), 3)
+        
+        temp.subset$predi <- temp.subset$d_dist_straight*slope
+        
+        rss <- sum((temp.subset$predi       - temp.subset$d_dist_ntwk) ^ 2)       ## residual sum of squares
+        tss <- sum((temp.subset$d_dist_ntwk - mean(temp.subset$d_dist_ntwk)) ^ 2) ## total sum of squares
+        rsq <- round(1 - rss/tss, 3)
+
+        return(paste(slope, rsq))
+      }
+    )
+  )
+
+summary_byra_wide <- summary_byra %>%
+  dplyr::select(-n) %>%
+  pivot_wider(names_from = "d_desra8", values_from = "coeffs")
+
+ts2_sumbyra <- Sys.time()
+
+print(ts2_sumbyra - ts1_sumbyra)
+
+save(ts1_sumbyra, ts2_sumbyra, summary_byra, summary_byra_wide,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/sumbyRA8.RData")
+```
+
+```{r load-645, echo=FALSE}
+load("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/sumbyRA8.RData")
+```
+
+```{r dt-649, echo=FALSE}
+options(OutDec= ",") 
+
+datatable(summary_byra_wide,
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+```{r summary-id}
+summary_byra$i_d <- 
+  sapply(summary_byra$coeffs,
+         function(string){
+           i_d <- str_split(string, " ")[[1]][1]
+           return(as.numeric(i_d))
+         })
+
+summary_byra$rsq <- 
+  sapply(summary_byra$coeffs,
+         function(string){
+           rsq <- str_split(string, " ")[[1]][2]
+           return(as.numeric(rsq))
+         })
+
+
+summary_byra$cross_water <-
+  case_when(
+    summary_byra$d_orira8 == summary_byra$d_desra8          ~ 0,
+    summary_byra$d_orira8 <= 4 & summary_byra$d_desra8 <= 4 ~ 0,
+    summary_byra$d_orira8 == 5 & summary_byra$d_desra8 == 8 ~ 0,
+    summary_byra$d_orira8 == 8 & summary_byra$d_desra8 <= 5 ~ 0,
+    TRUE ~ 1
+  )
+
+
+```
+
+Résumé général :
+
+```{r summary-701, echo=F}
+print(summary(summary_byra$i_d))
+print(summary(summary_byra$rsq))
+```
+
+Pas d'étendue d'eau :
+
+```{r summary-707, echo=F}
+print(summary(subset(summary_byra, !cross_water)$i_d))
+print(summary(subset(summary_byra, !cross_water)$rsq))
+```
+
+Étendue d'eau :
+
+```{r summary-715, echo=F}
+print(summary(subset(summary_byra, as.logical(cross_water))$i_d))
+print(summary(subset(summary_byra, as.logical(cross_water))$rsq))
+```
+
+ RA 7 vers RA 8 :
+
+```{r cor-ra7to8}
+#| code-fold: true
+
+# Pearson :
+itin_ra7to8 <- subset(depl_dist_RESULTS, d_orira8 == 7 & d_desra8 == 8)
+
+cor_ra7to8 <- cor.test(itin_ra7to8$d_dist_straight, itin_ra7to8$d_dist_ntwk, conf.level = .95)
+r_ra7to8 <- round(unname(cor_ra7to8$estimate), 3)
+
+
+
+# Regression lineaire
+lm_ra7to8 <- lm(d_dist_ntwk ~ d_dist_straight, itin_ra7to8)
+
+slope_ra7to8 <- round(unname(lm_ra7to8$coefficients[2]), 3)
+inter_ra7to8 <- round(unname(lm_ra7to8$coefficients[1]))
+
+itin_ra7to8$predi <- itin_ra7to8$d_dist_straight*slope_ra7to8 + inter_ra7to8
+
+rss      <- sum((itin_ra7to8$predi - itin_ra7to8$d_dist_ntwk) ^ 2)  ## residual sum of squares
+tss      <- sum((itin_ra7to8$d_dist_ntwk - mean(itin_ra7to8$d_dist_ntwk)) ^ 2)  ## total sum of squares
+rsq_ra7to8 <- round(1 - rss/tss, 3)
+```
+
+```{r print-731, echo=FALSE}
+print(paste0("r = ", r_ra7to8))
+print(paste0("slope = ",     slope_ra7to8))
+print(paste0("intercept = ", inter_ra7to8))
+print(paste0("R^2 = ",       rsq_ra7to8))
+```
+```{r plot-752, echo = F}
+options(OutDec= ".") 
+
+ggplot(itin_ra7to8, aes(d_dist_straight, d_dist_ntwk)) +
+  geom_point() +
+  geom_abline(slope = slope_ra7to8,    intercept = inter_ra7to8, color = "red") +
+  geom_abline(slope = 1) +
+  geom_text(aes(x = 1000, y = 155000), color = "red",  label = paste0("y == ",
+                                                                     as.character(slope_ra7to8),
+                                                                     "*x + ",
+                                                                     as.character(inter_ra7to8),
+                                                                     "*\";\"~R^2 ==",
+                                                                     as.character(rsq_ra7to8)), parse = T, hjust = 0) +
+  geom_text(aes(x = 1000, y = 150000), label = "y == x", parse = T, hjust = 0) +
+  labs(x = "d_dist_straight (m)", y = "d_dist_ntwk (m)")
+```
+
+
+
+Pearson RA 8 vers RA 7 :
+
+```{r cor-ra8to7}
+#| code-fold: true
+
+itin_ra8to7 <- subset(depl_dist_RESULTS, d_orira8 == 8 & d_desra8 == 7)
+
+cor_ra8to7 <- cor.test(itin_ra8to7$d_dist_straight, itin_ra8to7$d_dist_ntwk, conf.level = .95)
+r_ra8to7 <- round(unname(cor_ra8to7$estimate), 3)
+```
+
+```{r print-746, echo=FALSE}
+print(r_ra8to7)
+```
