@@ -54,10 +54,10 @@ On identifie les déplacements dont les coordonnées de départ ou d'arrivée ne
 depl$d_coordNA <-
   rowSums(
     is.na(
-      depl %>% select(d_orilat,
-                      d_orilon,
-                      d_deslat,
-                      d_deslon)
+      depl %>% dplyr::select(d_orilat,
+                             d_orilon,
+                             d_deslat,
+                             d_deslon)
       )
   ) >= 1
 ```
@@ -75,8 +75,8 @@ depl <- subset(depl, !d_coordNA)
 
 On identifie maintenant les modes qui nous intéressent, à savoir :
 
-- les automobiles et les motocyclettes (1, 2, 11, 12) ;
-- les autobus et le transport adapté (3, 5, 6, 7, 9, 10, 15) ;
+- les automobiles et les motocyclettes (1, 2, 11, 12);
+- les autobus et le transport adapté (3, 5, 6, 7, 9, 10, 15);
 - le train (8).
 
 On commence par convertir les modes de valeurs numériques à chaînes de caractères :
@@ -132,11 +132,13 @@ depl_emiGES$d_modeprob <-
                     "18")) # indéterminé  
 ```
 
-`r sum(depl_emiGES$d_modeprob)` déplacements concernés (`r round(sum(depl_emiGES$d_modeprob)/nrow(depl_emiGES),3)*100`&nbsp;%). On les retire :
+`r sum(depl_emiGES$d_modeprob)` déplacements concernés (`r round(sum(depl_emiGES$d_modeprob)/nrow(depl_emiGES),3)*100`&nbsp;%). On les retire&nbsp;:
 
 ```{r subset-modeprob}
 depl_emiGES <- subset(depl_emiGES, !d_modeprob)
 ```
+
+Nombre de déplacements final : `r nrow(depl_emiGES)`
 
 
 ## Séparation en segments
@@ -189,6 +191,8 @@ Pour une minorité de déplacements (seulement 49), deux points de jonctions son
 On procède à la conversion :
 
 ```{r depl-to-segm}
+#| code-fold: true
+
 # on crée un table avec un ligne par mode emprunté :
 
 temp <- temp %>% 
@@ -234,6 +238,8 @@ saveRDS(temp, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/
 On transforme la table obtenue :
 
 ```{r post-traitement-segments}
+#| code-fold: true
+
 temp <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/segments/temp_segm.Rds")
 
 temp <- temp %>%
@@ -279,6 +285,8 @@ temp <- temp %>%
 On ajoute les autres champs d'intérêt :
 
 ```{r ajout-champs-238}
+#| code-fold: true
+
 # on ajoute les autres champs d'intérêt :
 
 temp <- left_join(temp,
@@ -295,6 +303,8 @@ temp <- left_join(temp,
 On attribue les coordonnées d'origine et de destination à chaque segment. S'il s'agit du premier segment du déplacement, les coordonnées d'origine sont celles du déplacement, et les coordonnées de destination sont celles du point de jonction. S'il s'agit du deuxième segment du déplacement, les coordonnées d'origine sont celles du point de jonction, et les coordonnées de destination sont celles du déplacement.
 
 ```{r coord-segm}
+#| code-fold: true
+
 temp <- temp %>%
   mutate(
     s_orilon = 
@@ -320,7 +330,9 @@ temp <- temp %>%
 Enfin, on garde les champs d'intérêt et on enregistre :
 
 ```{r write-segm}
-temp <- temp %>% select(
+#| code-fold: true
+
+temp <- temp %>% dplyr::select(
     s_uid,
     ipere,
     s_mode1:s_mode4,
@@ -632,3 +644,6 @@ saveRDS(depl_TRANSIT, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/d
 saveRDS(depl_CAR,     "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_CAR.Rds")
 ```
 
+Nombre de déplacements en voiture uniquement : `r nrow(depl_CAR)`
+
+Nombre de déplacements avec du transport collectif : `r nrow(depl_TRANSIT)`
