@@ -4,6 +4,10 @@ Vous trouverez ci-dessous la liste de ces scripts.
 
 ## Liste des scripts
 
+### Traitements géométriques
+
+[Sélection des municipalités](https://vic0sss.github.io/MTR896/geom/select_municipalitesEOD18.html)
+
 ### Emissions autmobiles
 
 [Nettoyage des données de Ressources Canada](https://vic0sss.github.io/MTR896/emissionsAutomobiles/clean_RessourcesCanada.html)
