@@ -27,3 +27,7 @@ Vous trouverez ci-dessous la liste de ces scripts.
 [Distances réseau](https://vic0sss.github.io/MTR896/distances/networkDistances.html)
 
 [Traitement des distances](https://vic0sss.github.io/MTR896/distances/traitementDistances.html)
+
+### Bilans de GES
+
+[Calcul des émissions de GES](https://vic0sss.github/MTR896/bilanGES/preparationGES.html)
