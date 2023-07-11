@@ -1,0 +1,901 @@
+---
+title: "Préparation des données pour les bilans de GES"
+author: "Victor Nunzi"
+date: '2023-06-02'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant préparer les données pour les bilans de GES.
+
+Date du dernier *render* : `r Sys.Date()`
+
+```{r librairies-fun, message=FALSE, warning=FALSE}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Répertoire
+
+```{r setwd}
+setwd("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/bilanGES")
+```
+
+## Données 
+
+On commence par charger les données :
+
+```{r data-eod-18}
+od18 <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/od18niv2_plus.csv")
+
+sf.munic_od18 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/munic_od18_ges.shp", quiet = T)
+sf.sm_od18    <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-SM/SM_OD2018.shp",   quiet = T)
+```
+
+## FE automobiles (municipalités)
+
+On crée un *shapefile* avec les localisations des ménages :
+
+```{r sf-men}
+men <- 
+  od18 %>%
+  group_by(m_numero) %>%
+  summarise(
+    m_domlon = unique(m_domlon),
+    m_domlat = unique(m_domlat)
+  )
+```
+
+On les convertit en *sf* :
+
+```{r sf-men-2}
+sf.men <- st_as_sf(men, coords = c("m_domlon", "m_domlat"),
+                   crs = 4326)
+
+sf.men <- st_transform(sf.men, crs = 32188)
+```
+
+On associe à chaque ménage un facteur d'émission automobile, basé sur la municipalité du domicile :
+
+```{r men-moyco2, eval=FALSE}
+sf.men <-
+  st_join(sf.men, sf.munic_od18["MOY_CO2"],
+          join = st_within)
+
+st_write(sf.men, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/men_od18_ges.shp", quiet = T)
+```
+
+```{r st-read-72, echo=FALSE}
+sf.men <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/men_od18_ges.shp", quiet = T)
+
+summary(sf.men$MOY_CO2)
+```
+
+`r sum(!is.na(sf.men$MOY_CO2))` associations réalisées sur un total de `r nrow(sf.men)` ménages (`r round(sum(!is.na(sf.men$MOY_CO2))/nrow(sf.men),3)*100`&nbsp;%).
+
+Pour les `r sum(is.na(sf.men$MOY_CO2))` ménages sans facteur d'émissions automobiles, on prend la moyenne des autres valeurs (pondérées par les `m_fexp`) :
+
+```{r moy-moyCO2}
+sf.men$m_fexp <-
+  od18$m_fexp[match(sf.men$m_numero, od18$m_numero)]
+
+moy_FEauto_menages <-
+  sum(sf.men$MOY_CO2*sf.men$m_fexp, na.rm = T)/
+  sum(ifelse(is.na(sf.men$MOY_CO2), 0, sf.men$m_fexp))
+
+print(moy_FEauto_menages)
+
+sf.men$MOY_CO2 <-
+  ifelse(is.na(sf.men$MOY_CO2),
+         moy_FEauto_menages,
+         sf.men$MOY_CO2)
+
+summary(sf.men$MOY_CO2)
+
+od18$munic_FE_auto <- 
+  sf.men$MOY_CO2[match(od18$m_numero, sf.men$m_numero)]
+
+od18$munic_FE_auto <- round(od18$munic_FE_auto)
+
+summary(od18$munic_FE_auto)
+```
+
+## Occupation moyenne des véhicules (par SM)
+
+On calcule une occupation moyenne de véhicule par SM :
+
+```{r sm-occveh}
+od18 <- od18 %>%
+  
+  mutate(
+    across(d_mode1:d_mode9, # on passe les modes en chaînes de caractères
+           function(x){
+             char <- as.character(x)
+             char <- ifelse(str_length(char) == 1,      # le mode 1 devient "01", etc.
+                            paste("0", char, sep = ""),
+                            char)
+             return(char)
+             }
+           )
+  )
+
+
+od18 <- od18 %>%
+  unite("d_modeseq", d_mode1:d_mode9,
+        remove = F, na.rm = T, sep = "-")
+
+segm_auto.bySM <- 
+  od18 %>%
+  
+  pivot_longer(d_mode1:d_mode9,
+               names_to  = "d_modenumber",
+               values_to = "d_modevalue",
+               values_drop_na = T) %>%
+  
+  filter(d_modevalue %in% c("01", "02")) %>%
+  
+  group_by(ipere) %>%
+  
+  mutate(
+    segm_fexp = d_fexp/n()
+  ) %>% ungroup() %>%
+  
+  group_by(m_domsm) %>%
+  
+  summarise(
+    n_segm             = n(),
+    n_segm_conduc      = sum(d_modevalue == "01"),
+    n_segm_fexp        = sum(segm_fexp),
+    n_segm_conduc_fexp = sum((d_modevalue == "01")*segm_fexp)
+  ) %>% ungroup() %>%
+  
+  mutate(
+    sm_occveh = round(n_segm_fexp/n_segm_conduc_fexp, 2)
+  )
+```
+
+On ajoute les résultats aux SM :
+
+```{r match-sm}
+sf.sm_od18$sm_occveh <- 
+  segm_auto.bySM$sm_occveh[match(sf.sm_od18$Sm100,
+                                 segm_auto.bySM$m_domsm)]
+
+st_write(sf.sm_od18, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-SM/SM_OD2018.shp", 
+         quiet = T, append = F)
+```
+
+## FE automobiles (ménages)
+
+Enfin, on calcule un facteur d'émission automobile moyen pour chaque ménage, tenant compte de l'occupation du véhicule :
+
+```{r match-occveh}
+od18$sm_occveh <- 
+  sf.sm_od18$sm_occveh[match(od18$m_domsm, 
+                             sf.sm_od18$Sm100)]
+
+summary(od18$sm_occveh)
+
+od18$m_FE_auto <- round(od18$munic_FE_auto/od18$sm_occveh)
+
+summary(od18$m_FE_auto)
+```
+
+
+
+## Invalidité des observations
+
+On va maintenant identifier les déplacements "invalides", c'est-à-dire les déplacements qu'on sait émetteurs mais dont il n'est pas possible d'estimer les émissions. Cela concerne :
+
+- les déplacements émetteurs dont une coordonnée est manquante;
+- les déplacements avec les modes `16` (interurbain) et `18` (indéterminé);
+- les déplacements dont la distance réseau n'a pas pu être déterminée à l'aide de `r5r`.
+
+```{r d-invalid, message=FALSE}
+depl_emis       <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_COMPLETE.Rds")
+depl_r5rresults <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_dist_r5rResults.csv")
+
+
+od18$d_emiGES <-
+  str_detect_vect(od18$d_modeseq,
+                  c("01", "02", "11", "12",                   # automobile et moto
+                    "03", "05", "06", "07", "09", "10", "15", # bus et TA
+                    "08"))                                    # train
+od18$d_emiGES <- as.integer(od18$d_emiGES)
+
+od18$d_coordNA <-
+  rowSums(
+    is.na(
+      od18 %>% dplyr::select(d_orilat,
+                             d_orilon,
+                             d_deslat,
+                             d_deslon)
+      )
+  ) >= 1
+od18$d_coordNA <- as.integer(od18$d_coordNA)
+
+
+
+od18$d_isInvalid <- 
+  case_when(
+    od18$p_mobil != 1                          ~ NA_integer_,
+    od18$d_emiGES & od18$d_coordNA             ~ 1,
+    (od18$ipere %in% depl_emis$ipere) &
+      !(od18$ipere %in% depl_r5rresults$ipere) ~ 1,
+    str_detect_vect(od18$d_modeseq, 
+                    c("16", "18"))             ~ 1,
+    TRUE ~ 0
+  )
+
+depl       <- subset(od18, p_mobil == 1)
+depl_valid <- subset(depl, !d_isInvalid)
+
+pers <- 
+  depl %>%
+  group_by(m_numero, p_rang) %>%
+  summarise(p_isInvalid = as.integer(sum(d_isInvalid, na.rm = T) >= 1))
+
+men <-
+  depl %>%
+  group_by(m_numero) %>%
+  summarise(m_isInvalid = as.integer(sum(d_isInvalid, na.rm = T) >= 1))
+
+depl_valid$p_isInvalid <- 
+  pers$p_isInvalid[match(paste(depl_valid$m_numero, depl_valid$p_rang),
+                         paste(pers$m_numero,       pers$p_rang))]
+
+depl_valid$m_isInvalid <- 
+  men$m_isInvalid[match(depl_valid$m_numero,
+                        men$m_numero)]
+```
+
+- `r sum(depl$d_isInvalid, na.rm = T)` déplacements invalides sur `r nrow(depl)` (`r round(sum(depl$d_isInvalid, na.rm = T)/nrow(depl),3)*100`&nbsp;%);
+- `r sum(pers$p_isInvalid)` personnes invalides sur `r nrow(pers)` (`r round(sum(pers$p_isInvalid)/nrow(pers),3)*100`&nbsp;%);
+- `r sum(men$m_isInvalid)` ménages invalides sur `r nrow(men)` (`r round(sum(men$m_isInvalid)/nrow(men),3)*100`&nbsp;%).
+
+## Méthode 1 -- Distances réseau
+
+On charge les facteurs d'émissions :
+
+```{r fe-modes}
+FE_modes <- read.csv("data/FE_modes.csv")
+
+FE_modes <- FE_modes %>%
+  
+  mutate(
+    # on passe les modes en chaînes de caractères
+    mode_num = as.character(mode_num),
+    mode_num = ifelse(str_length(mode_num) == 1,      # le mode 1 devient "01", etc.
+                            paste("0", mode_num, sep = ""),
+                            mode_num)
+  )
+```
+
+On commence par calculer un facteur d'émission en auto et en bus pour chaque déplacement
+
+```{r FE-auto-bus}
+## VOITURE :
+
+segm_auto <- 
+  depl_valid %>%
+  
+  pivot_longer(d_mode1:d_mode9,
+               names_to  = "s_modenumber",
+               values_to = "s_modevalue",
+               values_drop_na = T) %>%
+  
+  filter(s_modevalue %in% c("01", "02", "09", "11", "12", "15")) %>% # on sélectionne les modes dont les distances sont calculées sur le réseau viaire
+  
+  mutate(
+    s_FE = FE_modes$mode_FE[match(s_modevalue, FE_modes$mode_num)]
+  )
+
+summary(segm_auto$s_FE)
+table(subset(segm_auto, is.na(s_FE))$s_modevalue, useNA = "ifany")
+
+segm_auto$s_FE <-
+  ifelse(is.na(segm_auto$s_FE),
+         od18$m_FE_auto[match(segm_auto$m_numero,
+                              od18$m_numero)],
+         segm_auto$s_FE)
+
+summary(segm_auto$s_FE)
+
+depl_FE_auto_ntwk <-
+  segm_auto %>%
+  group_by(ipere) %>%
+  summarise(d_FE_auto_ntwk = sum(s_FE)/n())
+
+summary(depl_FE_auto_ntwk$d_FE_auto_ntwk)
+
+depl_valid$d_FE_auto_ntwk <-
+  depl_FE_auto_ntwk$d_FE_auto_ntwk[match(depl_valid$ipere,
+                                         depl_FE_auto_ntwk$ipere)]
+
+
+## BUS : 
+
+segm_bus <- 
+  depl_valid %>%
+  
+  pivot_longer(d_mode1:d_mode9,
+               names_to  = "s_modenumber",
+               values_to = "s_modevalue",
+               values_drop_na = T) %>%
+  
+  filter(s_modevalue %in% c("03", "05", "06", "07", "10")) %>% # on sélectionne les modes dont les distances sont calculées sur le réseau de bus
+  
+  mutate(
+    s_FE = FE_modes$mode_FE[match(s_modevalue, FE_modes$mode_num)]
+  )
+
+summary(segm_bus$s_FE)
+
+depl_FE_bus <-
+  segm_bus %>%
+  group_by(ipere) %>%
+  summarise(d_FE_bus = sum(s_FE)/n())
+
+summary(depl_FE_bus$d_FE_bus)
+
+depl_valid$d_FE_bus <-
+  depl_FE_bus$d_FE_bus[match(depl_valid$ipere,
+                                   depl_FE_bus$ipere)]
+
+
+
+## TRAIN
+depl_valid$d_FE_train <- 119
+```
+
+```{r rm-334}
+rm(depl_FE_auto_ntwk,
+   depl_FE_bus,
+   segm_auto,
+   segm_bus)
+```
+
+
+```{r back-up-342, echo=FALSE}
+backup_depl_valid <- depl_valid
+```
+
+
+Calcul des GES :
+
+```{r bilans-ges}
+## Ajout des distances :
+depl_valid <- left_join(depl_valid,
+                        depl_r5rresults %>% dplyr::select(ipere, d_dist_car_ntwk, d_dist_bus_ntwk, d_dist_rail_ntwk),
+                        by = "ipere")
+
+depl_valid <-
+  depl_valid %>%
+  mutate(
+    across(d_dist_car_ntwk:d_dist_rail_ntwk,
+           ~ ifelse(is.na(.), 0, .))
+  )
+```
+
+```{r bilan-ges-2}
+depl_valid$d_dist_emis_ntwk <-
+  depl_valid$d_dist_car_ntwk +
+  depl_valid$d_dist_bus_ntwk +
+  depl_valid$d_dist_rail_ntwk
+
+summary(depl_valid$d_dist_emis_ntwk)
+
+depl_valid$d_gco2eq_m1 <- 
+  ifelse(depl_valid$d_dist_car_ntwk  > 0, depl_valid$d_dist_car_ntwk*depl_valid$d_FE_auto_ntwk/1000, 0) +
+  ifelse(depl_valid$d_dist_bus_ntwk  > 0, depl_valid$d_dist_bus_ntwk*depl_valid$d_FE_bus/1000, 0) +
+  ifelse(depl_valid$d_dist_rail_ntwk > 0, depl_valid$d_dist_rail_ntwk*depl_valid$d_FE_train/1000, 0)
+
+print(
+  sum(is.na(depl_valid$d_gco2eq_m1) & depl_valid$d_dist_emis_ntwk > 0)
+)
+
+print(
+  sum(depl_valid$d_gco2eq_m1 == 0 & depl_valid$ipere %in% depl_emis$ipere)
+)
+
+summary(depl_valid$d_gco2eq_m1)
+```
+
+
+
+
+## Méthode 2 et 3 -- Distances à vol d'oiseau
+
+
+On calcule les facteurs d'émissions de chaque déplacement :
+
+```{r fe-depl}
+segm <- 
+  depl %>%
+  filter(!d_isInvalid) %>%
+  
+  pivot_longer(d_mode1:d_mode9,
+               names_to  = "s_modenumber",
+               values_to = "s_modevalue",
+               values_drop_na = T) %>%
+  
+  filter(s_modevalue != "14") %>% # on retire la marche
+  filter(s_modevalue != "17") %>% # on retire les points de jonction
+  
+  mutate(
+    s_FE = FE_modes$mode_FE[match(s_modevalue, FE_modes$mode_num)]
+  )
+
+summary(segm$s_FE)
+table(subset(segm, is.na(s_FE))$s_modevalue, useNA = "ifany")
+```
+
+Il reste les facteurs d'émission des voitures et des motos, on les ajoute :
+
+```{r fe-segm}
+segm$s_FE <-
+  ifelse(is.na(segm$s_FE),
+         od18$m_FE_auto[match(segm$m_numero,
+                              od18$m_numero)],
+         segm$s_FE)
+
+summary(segm$s_FE)
+
+depl_FE <-
+  segm %>%
+  group_by(ipere) %>%
+  summarise(d_FE = sum(s_FE)/n())
+
+summary(depl_FE$d_FE)
+
+depl_valid$d_FE <- depl_FE$d_FE[match(depl_valid$ipere, depl_FE$ipere)]
+
+summary(depl_valid$d_FE)
+table(subset(depl_valid, is.na(d_FE))$d_modeseq, useNA = "ifany")
+```
+
+Il reste seulement les déplacements à pieds, on leur donne un FE de 0 :
+
+```{r marche}
+depl_valid$d_FE <- ifelse(is.na(depl_valid$d_FE) & depl_valid$d_modeseq == "14",
+                          0, depl_valid$d_FE)
+
+summary(depl_valid$d_FE)
+```
+
+```{r rm-312, echo=FALSE}
+rm(depl_FE)
+```
+
+
+Enfin, on calcule les émissions à vol d'oiseau :
+
+```{r emis-m2}
+depl_valid$d_dist_straight <- 
+  depl_emis$d_dist_straight[match(depl_valid$ipere,
+                                  depl_emis$ipere)]
+
+depl_valid$d_gco2eq_m2 <-
+  ifelse(depl_valid$d_FE == 0, 0,
+         depl_valid$d_FE*depl_valid$d_dist_straight/1000)
+
+depl_valid$d_gco2eq_m3 <- depl_valid$d_gco2eq_m2*1.44
+
+summary(depl_valid$d_gco2eq_m2)
+summary(depl_valid$d_gco2eq_m3)
+```
+## Ecarts
+
+```{r ecarts}
+depl_valid$d_e_m2m1 <- 
+  case_when(
+    depl_valid$d_gco2eq_m1 == 0 & depl_valid$d_gco2eq_m2 != 0 ~ NA_real_,
+    depl_valid$d_gco2eq_m1 == 0 & depl_valid$d_gco2eq_m2 == 0 ~ 0,
+    TRUE ~ (depl_valid$d_gco2eq_m2 - depl_valid$d_gco2eq_m1)/depl_valid$d_gco2eq_m1
+    )
+
+depl_valid$d_e_m3m1 <- 
+  case_when(
+    depl_valid$d_gco2eq_m1 == 0 & depl_valid$d_gco2eq_m3 != 0 ~ NA_real_,
+    depl_valid$d_gco2eq_m1 == 0 & depl_valid$d_gco2eq_m3 == 0 ~ 0,
+    TRUE ~ (depl_valid$d_gco2eq_m3 - depl_valid$d_gco2eq_m1)/depl_valid$d_gco2eq_m1
+    )
+
+summary(depl_valid$d_e_m2m1)
+summary(depl_valid$d_e_m3m1)
+
+depl_valid$d_e_m2m1_abs <- abs(depl_valid$d_e_m2m1)
+depl_valid$d_e_m3m1_abs <- abs(depl_valid$d_e_m3m1)
+
+summary(depl_valid$d_e_m2m1_abs)
+summary(depl_valid$d_e_m3m1_abs)
+```
+
+Diagrammes en barres :
+
+```{r barplot}
+barplot_em2m1 <-
+  depl_valid %>%
+  filter(!is.na(d_e_m2m1)) %>%
+  mutate(
+    intervalles = cut(d_e_m2m1, breaks = seq(-1, 1, .1), include.lowest = T, dig.lab = 1)
+  ) %>%
+  group_by(intervalles) %>%
+  summarise(n = n())
+
+barplot_em2m1$intervalles <-
+  ifelse(is.na(barplot_em2m1$intervalles), "> 1.0", as.character(barplot_em2m1$intervalles))
+
+
+barplot_em2m1$intervalles <- factor(barplot_em2m1$intervalles, levels = barplot_em2m1$intervalles)
+
+# ggplot(data = barplot_em2m1, aes(x = intervalles, y = n)) +
+#   geom_bar(stat="identity")
+
+
+
+barplot_em3m1 <-
+  depl_valid %>%
+  filter(!is.na(d_e_m3m1)) %>%
+  mutate(
+    intervalles = cut(d_e_m3m1, breaks = seq(-1, 1, .1), include.lowest = T, dig.lab = 1)
+  ) %>%
+  group_by(intervalles) %>%
+  summarise(n = n())
+
+barplot_em3m1$intervalles <-
+  ifelse(is.na(barplot_em3m1$intervalles), "> 1.0", as.character(barplot_em3m1$intervalles))
+ 
+
+barplot_em3m1$intervalles <- factor(barplot_em3m1$intervalles, levels = barplot_em3m1$intervalles)
+# 
+# ggplot(data = barplot_em2m1, aes(x = intervalles, y = n)) +
+#   geom_bar(stat="identity")
+```
+
+```{r test}
+combined <- barplot_em2m1 %>%
+  rename(n_m2m1 = n) %>%
+  mutate(n_m3m1 = barplot_em3m1$n[match(intervalles, barplot_em3m1$intervalles)])
+
+# text1 <- "Écarts entre les émissions calculées à partir des distances réseau (méthode 1) et à vol d'oiseau (méthode 2)"
+# text2 <- "Écarts entre les émissions calculées à partir des distances réseau (méthode 1) et à vol d'oiseau, corrigées d'un indice de détour (méthode 3)"
+
+
+ggplot(data = combined, aes(x = intervalles, y = n)) +
+  geom_bar(
+    aes(x = intervalles,
+        y = n_m2m1,
+        fill = "Écarts entre les émissions calculées à partir\ndes distances réseau (méthode 1) et à vol\nd'oiseau (méthode 2)"),
+    alpha = .5, stat="identity") +
+  geom_bar(
+    aes(x = intervalles,
+        y = n_m3m1,
+        fill = "Écarts entre les émissions calculées à partir\ndes distances réseau (méthode 1) et à vol\nd'oiseau, corrigées d'un indice de détour\n(méthode 3)"),
+    alpha = .5, stat="identity") +
+  geom_vline(xintercept = 10.5) +
+  scale_fill_manual(values = c(
+    "Écarts entre les émissions calculées à partir\ndes distances réseau (méthode 1) et à vol\nd'oiseau (méthode 2)" = "red",
+    "Écarts entre les émissions calculées à partir\ndes distances réseau (méthode 1) et à vol\nd'oiseau, corrigées d'un indice de détour\n(méthode 3)" = "blue")) +
+  xlab("Écarts relatifs") +
+  ylab("Nombre de déplacements") + 
+  labs(fill = "") +
+  theme(
+    axis.title  = element_text(size=8),
+    axis.text   = element_text(size=6),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.text = element_text(size=6),
+    legend.position = "bottom"
+  )
+
+ggsave(
+  file = paste0("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/04_Rapport/LaTeX/Figures/hist_ecarts_", 
+                str_remove_all(Sys.Date(), "-"), ".png"),
+  width = 2000,
+  height = 1500,
+  units = "px"
+)
+```
+
+## Agrégation
+
+<!-- déplacements : par mode
+personnes : par profil socio demo
+ménages : par sm -->
+
+### Déplacements
+
+Modes exclusifs :
+
+```{r modeexclu}
+#| code-fold: true
+
+depl_valid <-
+  depl_valid %>%
+  mutate(
+    d_auto_bin  = str_detect_vect(d_modeseq, c("01", "02", "11")),
+    d_bus_bin   = str_detect_vect(d_modeseq, c("03", "05", "06", "07", "10")),
+    d_metro_bin = str_detect_vect(d_modeseq, c("04")),
+    d_train_bin = str_detect_vect(d_modeseq, c("08")),
+    d_velo_bin  = str_detect_vect(d_modeseq, c("13")),
+    d_autre_bin = str_detect_vect(d_modeseq, c("09", "12", "15")),
+    
+    across(d_auto_bin:d_autre_bin,
+           ~ as.integer(.)),
+    
+    d_nbmodespasmarche = 
+      d_auto_bin + d_bus_bin + d_metro_bin + 
+      d_train_bin + d_velo_bin + d_autre_bin,
+    
+    d_modeexclu = case_when(
+      d_nbmodespasmarche > 1  ~ "multimode",
+      d_nbmodespasmarche == 0 ~ NA_character_,
+      TRUE ~ case_when(
+        d_auto_bin  == 1 ~ "auto",
+        d_bus_bin   == 1 ~ "bus",
+        d_metro_bin == 1 ~ "metro",
+        d_train_bin == 1 ~ "train",
+        d_velo_bin  == 1 ~ "velo",
+        d_autre_bin == 1 ~ "autre"
+      )
+    )
+  )
+
+table(depl_valid$d_modeexclu, useNA = "ifany")
+table(subset(depl_valid, is.na(d_modeexclu))$d_modeseq, useNA = "ifany")
+
+depl_valid$d_modeexclu <-
+  ifelse(is.na(depl_valid$d_modeexclu),
+         "marche",
+         depl_valid$d_modeexclu)
+
+table(depl_valid$d_modeexclu, useNA = "ifany")
+```
+
+```{r summary-depl}
+#| code-fold: true
+
+summary_depl <-
+  depl_valid %>%
+  group_by(d_modeexclu) %>%
+  summarise(
+    n = n(),
+    moy_gco2eq_m1 = weighted.mean(x = d_gco2eq_m1, y = d_fexp),
+    moy_gco2eq_m2 = weighted.mean(x = d_gco2eq_m2, y = d_fexp),
+    moy_gco2eq_m3 = weighted.mean(x = d_gco2eq_m3, y = d_fexp)
+  ) %>%
+  mutate(
+    across(moy_gco2eq_m1:moy_gco2eq_m3,
+           ~ round(.)),
+    
+    e_m2m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m2 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    e_m3m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m3 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    across(e_m2m1:e_m3m1,
+           ~ round(., 3))
+  )
+```
+
+```{r dt-678, echo=FALSE}
+dt_depl <- 
+  summary_depl %>%
+  mutate(
+    moy_gco2eq_m2 = paste0(moy_gco2eq_m2, " (", e_m2m1*100, " %)"),
+    moy_gco2eq_m3 = paste0(moy_gco2eq_m3, " (", e_m3m1*100, " %)")
+  ) %>%
+  dplyr::select(-c(e_m2m1, e_m3m1))
+
+
+datatable(dt_depl,
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+
+
+
+### Personnes
+
+```{r summary-pers, message=FALSE}
+#| code-fold: true
+
+summary_pers <-
+  depl_valid %>%
+  filter(!p_isInvalid) %>%
+  
+  group_by(m_numero, p_rang) %>%
+  summarise(
+    p_gco2eq_m1 = sum(d_gco2eq_m1),
+    p_gco2eq_m2 = sum(d_gco2eq_m2),
+    p_gco2eq_m3 = sum(d_gco2eq_m3),
+    
+    p_fexp  = unique(p_fexp),
+    p_sexe  = unique(p_sexe),
+    p_grage = unique(p_grage)
+  ) %>% ungroup() %>%
+  
+  group_by(p_sexe, p_grage) %>%
+  summarise(
+    n = n(),
+    moy_gco2eq_m1 = weighted.mean(x = p_gco2eq_m1, y = p_fexp),
+    moy_gco2eq_m2 = weighted.mean(x = p_gco2eq_m2, y = p_fexp),
+    moy_gco2eq_m3 = weighted.mean(x = p_gco2eq_m3, y = p_fexp)
+  ) %>%
+  mutate(
+    across(moy_gco2eq_m1:moy_gco2eq_m3,
+           ~ round(.)),
+    
+    e_m2m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m2 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    e_m3m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m3 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    across(e_m2m1:e_m3m1,
+           ~ round(., 3))
+  )
+
+print(
+  paste0("n min = ", min(summary_pers$n))
+)
+
+print(
+  paste0("n median = ", median(summary_pers$n))
+)
+```
+
+```{r prep-summary-pers}
+#| code-fold: true
+
+dt_pers <- 
+  summary_pers %>%
+  mutate(
+    moy_gco2eq_m2 = paste0(moy_gco2eq_m2, " (", e_m2m1*100, " %)"),
+    moy_gco2eq_m3 = paste0(moy_gco2eq_m3, " (", e_m3m1*100, " %)")
+  )
+
+dt_pers <- cbind(
+  dt_pers %>% pivot_wider(names_from = "p_sexe", values_from = "moy_gco2eq_m1", id_cols = "p_grage"),
+  dt_pers %>% pivot_wider(names_from = "p_sexe", values_from = "moy_gco2eq_m2", id_cols = "p_grage"),
+  dt_pers %>% pivot_wider(names_from = "p_sexe", values_from = "moy_gco2eq_m3", id_cols = "p_grage")
+)
+
+colnames(dt_pers) <- 
+  c("p_grage",
+    "h_m1", "f_m1",
+    "p_grage2",
+    "h_m2", "f_m2",
+    "p_grage3",
+    "h_m3", "f_m3")
+
+dt_pers$p_grage2 <- NULL
+dt_pers$p_grage3 <- NULL
+```
+
+```{r dt-764, echo=FALSE}
+datatable(dt_pers,
+          rownames = FALSE,
+          class = "nowrap",
+          extensions = 'Buttons',
+          options = list(
+            scrollX = T,
+            dom = 'Bfrtip',
+            buttons =
+              list(
+                list(
+                  extend = 'collection',
+                  buttons = c('csv', 'excel'),
+                  text = 'Download'
+                  )
+                )
+            )
+          )
+```
+
+### Ménages
+
+```{r summary-men}
+#| code-fold: true
+
+summary_men <-
+  depl_valid %>%
+  filter(!m_isInvalid) %>%
+  
+  group_by(m_numero) %>%
+  summarise(
+    m_gco2eq_m1 = sum(d_gco2eq_m1),
+    m_gco2eq_m2 = sum(d_gco2eq_m2),
+    m_gco2eq_m3 = sum(d_gco2eq_m3),
+    
+    m_fexp  = unique(m_fexp),
+    m_domsm = unique(m_domsm)
+  ) %>% ungroup() %>%
+  
+  group_by(m_domsm) %>%
+  summarise(
+    n = n(),
+    moy_gco2eq_m1 = weighted.mean(x = m_gco2eq_m1, y = m_fexp),
+    moy_gco2eq_m2 = weighted.mean(x = m_gco2eq_m2, y = m_fexp),
+    moy_gco2eq_m3 = weighted.mean(x = m_gco2eq_m3, y = m_fexp)
+  ) %>%
+  mutate(
+    across(moy_gco2eq_m1:moy_gco2eq_m3,
+           ~ round(.)),
+    
+    e_m2m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m2 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m2 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    e_m3m1 = 
+      case_when(
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 != 0 ~ NA_real_,
+        moy_gco2eq_m1 == 0 & moy_gco2eq_m3 == 0 ~ 0,
+        TRUE ~ (moy_gco2eq_m3 - moy_gco2eq_m1)/moy_gco2eq_m1
+        ),
+    
+    across(e_m2m1:e_m3m1,
+           ~ round(., 3))
+  )
+
+print(
+  paste0("n min = ", min(summary_men$n))
+)
+
+print(
+  paste0("n median = ", median(summary_men$n))
+)
+```
+
+On ajoute les résultats obtenus aux SM :
+
+```{r sm-bilan-ges}
+sf.sm_od18.ges <- left_join(sf.sm_od18, summary_men %>% dplyr::select(c(m_domsm, moy_gco2eq_m1:e_m3m1)),
+                            by = c("Sm100" = "m_domsm"))
+
+st_write(sf.sm_od18.ges, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-SM/SM_OD2018_GES.shp", 
+         quiet = T, append = F)
+```
+
