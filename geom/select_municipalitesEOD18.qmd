@@ -21,13 +21,15 @@ Date du dernier *render* : `r Sys.Date()`
 source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
 ```
 
-# Données
+## Données
 
 Les limites des municipalités ont été téléchargées [ici](https://www.donneesquebec.ca/recherche/fr/dataset/decoupages-administratifs). On charge les données :
 
 ```{r data}
 sf.terr_od18 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/eod/shapefile-limiteOD/TERR_OD2018.shp",             quiet = T)
 sf.munic     <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/Sda/version_courante/SHP/munic_s.shp", quiet = T)
+
+od18 <- read.csv("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/od18niv2_plus.csv")
 ```
 
 Reprojection :
@@ -37,6 +39,23 @@ sf.terr_od18 <- st_transform(sf.terr_od18, crs = 32188)
 sf.munic     <- st_transform(sf.munic,     crs = 32188)
 ```
 
-# Sélection
+## Sélection
 
+```{r subset}
+sf.munic.od18 <-
+  subset(sf.munic,
+         as.logical(st_intersects(geometry, sf.terr_od18$geometry)))
+```
+
+```{r plot}
+ggplot(data = sf.munic.od18) +
+  geom_sf() + 
+  coord_sf()
+```
+
+## Enregistrement
+
+```{r}
+st_write(sf.munic.od18, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/munic_od18.shp", quiet = T)
+```
 
