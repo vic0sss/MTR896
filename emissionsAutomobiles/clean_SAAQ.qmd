@@ -60,7 +60,7 @@ df.vehSAAQ.filter <- df.vehSAAQ.filter %>%
   filter(MODEL_VEH != "ARTIS")
 ```
 
-Nombre d'obervations enlevées : `r nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter)` (**`r round((nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter))/nrow(df.vehSAAQ), 3)*100` %**).
+Nombre d’observations enlevées : `r nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter)` (**`r round((nrow(df.vehSAAQ) - nrow(df.vehSAAQ.filter))/nrow(df.vehSAAQ), 3)*100` %**).
 
 ### Classe du véhicule {-}
 
@@ -72,4 +72,27 @@ df.vehSAAQ.filter <- subset(df.vehSAAQ.filter, CLAS %in% c("PAU", "CAU", "RAU", 
 
 ### Localisation {-}
 
+On *subset* pour ne garder que les véhicules immatriculés dans la zone de l'enquête OD 2018.
+
+Chargement des municipalités du territoire :
+
+```{r data-munic}
+sf.munic_od18 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/munic_od18.shp", quiet = T)
+```
+
+On *subset* :
+
+```{r subset-saaq}
+df.vehSAAQ.filter <- subset(df.vehSAAQ.filter, 
+                            CG_FIXE %in% sf.munic_od18$MUS_CO_GEO)
+```
+
+## Enregistrement {-}
+
+```{r}
+write.csv(df.vehSAAQ.filter, paste0("results/data_clean_SAAQ_",
+                                    str_remove_all(Sys.Date(), "-"),
+                                    ".csv"),
+          row.names = F)
+```
 

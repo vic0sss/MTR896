@@ -11,7 +11,6 @@ format:
     toc-depth: 3
     number-sections: true
     embed-resources: true
-editor: visual
 ---
 
 Script *Quarto* visant à nettoyer les données de Ressources Canada (cotes de consommation).
@@ -71,7 +70,7 @@ On va maintenant nettoyer tous les fichiers dans l'ordre (on commence par `AM199
 ```{r view-AM1995_1999, echo = F}
 datatable(AM1995_1999[1:10,],
           rownames = FALSE,
-          class = "nowrap",
+          class = "nowrap"
           # extensions = 'Buttons',
           # options = list(
           #   scrollX = T,
@@ -87,11 +86,12 @@ datatable(AM1995_1999[1:10,],
           #   )
           )
 ```
+
 <br>
 
 De même, les explications des données sont à la fin du csv, ce qui est peu pratique :
 
-![](C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles/pictures/screenshot_2023-06-02 161552.jpg)
+![](C:/Users/victo/OneDrive%20-%20ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles/pictures/screenshot_2023-06-02%20161552.jpg)
 
 On nettoie tout cela, à commencer par les noms de colonnes :
 
@@ -139,7 +139,6 @@ datatable(AM1995_1999[1:100,],
             )
           )
 ```
-
 
 On fait le même genre de traitement pour les autres jeux de données (en vérifiant d'abord chaque jeu de données individuellement).
 
@@ -201,7 +200,6 @@ colnames(AM2012_2023_hybr) <-
       "emiCO2_gkm")
 ```
 
-
 Noms de colonnes pour les voitures électriques :
 
 ```{r elec-colnames}
@@ -222,7 +220,6 @@ colnames(AM2012_2023_elec) <-
       "autonomie_km",
       "emiCO2_gkm")
 ```
-
 
 Sélection des lignes (et colonnes) avec les données :
 
@@ -269,12 +266,11 @@ do.call(rm, list("AM1995_1999",
                  "AM2012_2023_elec"))
 ```
 
-
 On ne garde que les colonnes qui permettent la fusion avec les données de la SAAQ :
 
 ```{r select-260}
 df.merged.AM <- df.merged.AM %>%
-  select(c(annee_modele,
+  dplyr::select(c(annee_modele,
            marque,
            modele,
            cyl_L,
@@ -285,10 +281,10 @@ df.merged.AM <- df.merged.AM %>%
 
 Pour concorder avec la marque et le modèle, on réalise les opérations suivantes :
 
-1. passage en majuscules ;
-2. suppression des espaces ;
-3. suppression des caractères non-alphanumériques ;
-4. troncage pour ne garder que les 5 premiers caractères.
+1.  passage en majuscules ;
+2.  suppression des espaces ;
+3.  suppression des caractères non-alphanumériques ;
+4.  troncage pour ne garder que les 5 premiers caractères.
 
 ```{r modif-marque-modele}
 df.merged.AM <- df.merged.AM %>%
@@ -308,7 +304,7 @@ df.merged.AM <- df.merged.AM %>%
   )
 ```
 
-On cap le nombre de cylindres à 9, et on passe les données de cylindrée de L à $cm^3$ : 
+On cap le nombre de cylindres à 9, et on passe les données de cylindrée de L à $cm^3$ :
 
 ```{r modif-cyl}
 df.merged.AM <- df.merged.AM %>%
@@ -340,9 +336,6 @@ print(table(df.merged.AM$typ_carb_SAAQ, useNA = "ifany"))
 print(nrow(AM2012_2023_hybr))
 ```
 
-
-
-
 # Enregistrement
 
 ```{r write-260}
@@ -350,5 +343,3 @@ write.csv(df.merged.AM,
           "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles/results/data_cleanedRessourcesCanada_20230606.csv",
           row.names = F)
 ```
-
-

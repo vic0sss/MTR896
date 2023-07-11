@@ -11,62 +11,162 @@ format:
     toc-depth: 3
     number-sections: true
     embed-resources: true
-editor: visual
 ---
 
 Script *Quarto* visant à fusionner les jeux de données de la SAAQ (véhicules en circulation) et de Ressources Canada (cotes de consommation).
 
 Date du dernier *render* : `r Sys.Date()`
 
-# Librairies
-
-```{r librairies, message=F, warning=F}
-library(tidyverse)
-library(knitr)
-library(DT)
-# library(janitor)
-library(sf)
-# library(tmap)
-# library(randomcoloR)
-# library(readr)
+```{r librairies, message=F, warning=F, echo = F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
 ```
 
-# Données
+## Répertoire
 
-Répertoires :
-
-```{r paths}
-data_path <- "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/"
+```{r setwd}
+setwd("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/emissionsAutomobiles")
 ```
 
-On commence par charger les deux jeux de données. Dans un premier temps, on va convertir le `.csv` de la SAAQ en `.Rds` pour gagner du temps sur les prochains traitements.
+## Données
 
-```{r convert-Rds, eval=FALSE}
-## eval=FALSE
+On charge les données préalablement nettoyées : 
 
-df.veh_en_circulation <- read.csv(paste0(data_path, "SAAQ/vehicule-en-circulation-2018.csv"))
-
-saveRDS(df.veh_en_circulation, paste0(data_path, "SAAQ/data_vehEnCirculation_20230602.Rds"))
+```{r read-data}
+data_SAAQ <- read.csv("results/data_clean_SAAQ_20230628.csv")
+data_ReCa <- read.csv("results/data_cleanedRessourcesCanada_20230606.csv")
 ```
 
-Données :
+## Nettoyage SAAQ
 
-```{r data}
+On applique aux modèles et marques de la SAAQ les mêmes traitements que pour Ressources Canada :
 
-df.veh_en_circulation <- readRDS(paste0(data_path, "SAAQ/data_vehEnCirculation_20230602.Rds"))
-
-df.cotes_conso <- read.csv(paste0(data_path, "AM2018 Cotes de consommation de carburant.csv"),
-                           header = T, fileEncoding="windows-1252")
-
-df.cotes_conso <- df.cotes_conso[,1:15] # tout est vide après la 15e colonne
+```{r saaq-marque-modele}
+data_SAAQ <- data_SAAQ %>%
+  mutate(
+    
+    across(c(MARQ_VEH, MODEL_VEH),
+           toupper),
+    
+    across(c(MARQ_VEH, MODEL_VEH),
+           ~ str_remove_all(., " ")),
+    
+    across(c(MARQ_VEH, MODEL_VEH),
+           ~ str_remove_all(., "[^[:alnum:]]")),
+    
+    across(c(MARQ_VEH, MODEL_VEH),
+           ~ ifelse(str_length(.) > 5, str_sub(., 1, 5), .))
+  )
 ```
 
-# Traitement
+## Marque
 
-## Nettoyage des données de Ressources Canada
+On commence par comparer les marques. On affiche les marques de Ressources Canada qui n'ont pas de correspondance dans les données de la SAAQ, malgré les traitements : 
 
-On commence avec les noms des champs :
-
-```{r colnames-cotes}
-print(colnames(df.cotes_conso))
+```{r print-43, echo = F}
+datatable(as.data.frame(table(subset(data_ReCa, !(marque %in% data_SAAQ$MARQ_VEH))$marque)))
 ```
+
+On fait la même chose avec les marques de la SAAQ :
+
+```{r print-49, echo = F}
+datatable(as.data.frame(table(subset(data_SAAQ, !(MARQ_VEH %in% data_ReCa$marque))$MARQ_VEH)))
+```
+
+
+On change `ALFAR` en `ALFA` dans les données de Ressources Canada :
+
+```{r alfa}
+data_ReCa$marque <- 
+  ifelse(data_ReCa$marque == "ALFAR",
+         "ALFA",
+         data_ReCa$marque)
+```
+
+```{r print-63, echo = F}
+datatable(as.data.frame(table(subset(data_ReCa, !(marque %in% data_SAAQ$MARQ_VEH))$marque)))
+```
+
+Dans l'ensemble, les marques correspondent assez bien.
+
+## Correspondance
+
+On regarde combien d'élément de la SAAQ il est possible de trouver dans la base de Ressources Canada à partir d'une clé de la forme : ANNEE_MARQUE_MODELE_CARBURANT.
+
+```{r key}
+data_ReCa$KEY <-
+  paste(data_ReCa$annee_modele,
+        data_ReCa$marque,
+        data_ReCa$modele,
+        data_ReCa$typeFuel,
+        sep = "_")
+
+data_SAAQ$KEY <-
+  paste(data_SAAQ$ANNEE_MOD,
+        data_SAAQ$MARQ_VEH,
+        data_SAAQ$MODEL_VEH,
+        data_SAAQ$TYP_CARBU,
+        sep = "_")
+```
+
+`r sum(data_SAAQ$KEY %in% data_ReCa$KEY)` correspondances (`r round(sum(data_SAAQ$KEY %in% data_ReCa$KEY)/nrow(data_SAAQ), 3)*100`&nbsp;%).
+
+C'est un faible pourcentage, mais un volume de données important.
+
+Regardons par municipalité :
+
+```{r key-munic}
+data_SAAQ$MATCH_KEY <-
+  as.integer(data_SAAQ$KEY %in% data_ReCa$KEY)
+
+data_SAAQ.munic <- data_SAAQ %>%
+  group_by(CG_FIXE) %>%
+  summarise(NB_MATCH = sum(MATCH_KEY))
+
+summary(data_SAAQ.munic$NB_MATCH)
+```
+
+On a plus de 1000 obs. en moyenne par municipalité, et pas moins de 16 obs. dans le pire des cas, on va donc partir avec ça.
+
+## Association des émissions
+
+On associe, partout où c'est possible, une valeur d'émissions aux véhicules de la SAAQ :
+
+```{r fac-emis}
+data_SAAQ$emiCO2_gkm <-
+  data_ReCa$emiCO2_gkm[match(data_SAAQ$KEY, data_ReCa$KEY)]
+```
+
+On sépare les véhicules en deux types : utilisation personnelle et taxi :
+
+```{r}
+data_SAAQ.munic <- data_SAAQ %>%
+  filter(CLAS != "TTA") %>%
+  filter(!is.na(emiCO2_gkm)) %>%
+  group_by(CG_FIXE) %>%
+  summarise(NB_OBS = n(),
+            MOY_emiCO2_gkm = mean(emiCO2_gkm))
+
+summary(data_SAAQ.munic$NB_OBS)
+summary(data_SAAQ.munic$MOY_emiCO2_gkm)
+
+data_SAAQ.taxi <- data_SAAQ %>%
+  filter(CLAS == "TTA") %>%
+  filter(!is.na(emiCO2_gkm))
+
+print(nrow(data_SAAQ.taxi))
+print(mean(data_SAAQ.taxi$emiCO2_gkm))
+```
+
+On ajoute les valeurs d'émissions par municipalités au shapefile :
+
+```{r munic-shp}
+sf.munic_od18 <- st_read("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/munic_od18.shp", quiet = T)
+
+sf.munic_od18$MOY_emiCO2_gkm <-
+  data_SAAQ.munic$MOY_emiCO2_gkm[match(sf.munic_od18$MUS_CO_GEO,
+                                      data_SAAQ.munic$CG_FIXE)]
+
+st_write(sf.munic_od18, "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/geom/municipalites/munic_od18_ges.shp", quiet = T,
+         append = F)
+```
+
