@@ -164,10 +164,10 @@ depl_distances$d_dist_car_ntwk <-
          depl_distances$d_dist_car_ntwk)
 
 
-depl_distances$d_dist_bus_ntwk     <- distances_TC_BIND$BUS[match(depl_distances$ipere, distances_TC_BIND$from_id)]
-depl_distances$d_dist_walk_ntwk    <- distances_TC_BIND$WALK[match(depl_distances$ipere, distances_TC_BIND$from_id)]
-depl_distances$d_dist_subway_ntwk  <- distances_TC_BIND$SUBWAY[match(depl_distances$ipere, distances_TC_BIND$from_id)]
-depl_distances$d_dist_rail_ntwk    <- distances_TC_BIND$RAIL[match(depl_distances$ipere, distances_TC_BIND$from_id)]
+depl_distances$d_dist_bus_ntwk     <- distances_TC_BIND$BUS[match(depl_distances$ipere,     distances_TC_BIND$from_id)]
+depl_distances$d_dist_walk_ntwk    <- distances_TC_BIND$WALK[match(depl_distances$ipere,    distances_TC_BIND$from_id)]
+depl_distances$d_dist_subway_ntwk  <- distances_TC_BIND$SUBWAY[match(depl_distances$ipere,  distances_TC_BIND$from_id)]
+depl_distances$d_dist_rail_ntwk    <- distances_TC_BIND$RAIL[match(depl_distances$ipere,    distances_TC_BIND$from_id)]
 depl_distances$d_dist_bicycle_ntwk <- distances_TC_BIND$BICYCLE[match(depl_distances$ipere, distances_TC_BIND$from_id)]
 
 depl_distances$d_dist_ntwk <- 
@@ -181,6 +181,15 @@ depl_dist_RESULTS <- subset(depl_distances, d_dist_ntwk != 0)
 ```
 
 Cela comprend `r nrow(depl_dist_RESULTS)` déplacements (`r round(nrow(depl_dist_RESULTS)/nrow(depl_distances), 3)*100`&nbsp;% du total).
+
+On enregiste :
+
+```{r write-187}
+write.csv(depl_dist_RESULTS, 
+          "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_dist_r5rResults.csv",
+          row.names = F)
+```
+
 
 ### Corrélation générale
 

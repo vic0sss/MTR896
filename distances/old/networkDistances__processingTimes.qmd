@@ -1,0 +1,473 @@
+---
+title: "Calcul des distances réseau -- Temps de calcul"
+author: "Victor Nunzi"
+date: '2023-06-24'
+format: 
+  html:
+    toc: true
+    toc-location: 'left'
+    toc-float: true
+    toc-collapsed: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+---
+
+Script *Quarto* visant déterminer les temps de calcul pour les itinéraires souhaités, sans réécrire les données pour les cas déjà traités.
+
+Date du dernier *render* : `r Sys.Date()`
+
+
+
+## Librairies et fonctions {-}
+
+```{r lib-fonctions, message=F, warning=F}
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/librairies/librairies.R")
+source("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/fonctions/fonctions.R")
+```
+
+## Données
+
+On commence par charger les déplacements préalablement préparés :
+
+```{r data-eod-18}
+depl_CAR       <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_CAR.Rds")
+depl_TRANSIT   <- readRDS("C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/00_Donnees/deplacements/depl_TRANSIT.Rds")
+```
+
+## Initialisation
+
+```{r init, message=F, warning=FALSE}
+options(java.parameters = "-Xmx8G")
+
+gc()
+
+path <- "C:/Users/victo/OneDrive - ARTM/Documents/Travail/02_Donnees/04_MTR896/r5r_core/v1 - final"
+
+r5r_core <- setup_r5(data_path = path)
+```
+
+## Calcul
+
+On va maintenant calculer les distances réseau, en séparant les déplacements automobiles des déplacements TC.
+
+### CAR
+
+On commence par les déplacements en automobile : `r nrow(depl_CAR)` déplacements, mais un seul appel de la fonction `r5r::detailed_itineraries`.
+
+```{r detailed-itineraries-car, eval=FALSE}
+#| code-fold: true
+
+ori_CAR <- depl_CAR %>%
+  dplyr::select(ipere, d_orilat, d_orilon) %>%
+  mutate(ipere = as.character(ipere)) %>%
+  rename(
+    id  = ipere,
+    lat = d_orilat,
+    lon = d_orilon
+  )
+
+des_CAR <- depl_CAR %>%
+  dplyr::select(ipere, d_deslat, d_deslon) %>%
+  mutate(ipere = as.character(ipere)) %>%
+  rename(
+    id  = ipere,
+    lat = d_deslat,
+    lon = d_deslon
+  )
+
+gc()
+startt_car_f <- Sys.time()
+
+RESULTS_CAR <- detailed_itineraries(
+            r5r_core,
+            ori_CAR,
+            des_CAR,
+            mode = "CAR",
+            walk_speed = 5,
+            drop_geometry = T
+          )
+
+endt_car_f <- Sys.time()
+
+save(startt_car_f, endt_car_f,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/timestamps_final.RData")
+
+print(endt_car_f - startt_car_f)
+```
+
+<!-- Nombre de déplacements avec un résultat : `r n_distinct(RESULTS_CAR$from_id)` (`r round(n_distinct(RESULTS_CAR$from_id)/nrow(depl_TRANSIT),3)*100`&nbsp;%). -->
+
+### TRANSIT
+
+On calcule maintenant les distances pour le transport en commun selon les 3 stratégies : pas de temps de 1 minute, 5 minutes, et 15 minutes.
+
+On commence par déterminer les origines et les destinations des déplacements en TC :
+
+```{r ori-des-transit}
+depl_TRANSIT <- depl_TRANSIT %>% arrange(r5r_datetime_1min)
+
+
+ori_TRANSIT <- depl_TRANSIT %>%
+  dplyr::select(ipere, d_orilat, d_orilon) %>%
+  mutate(ipere = as.character(ipere)) %>%
+  rename(
+    id  = ipere,
+    lat = d_orilat,
+    lon = d_orilon
+  )
+
+des_TRANSIT <- depl_TRANSIT %>%
+  dplyr::select(ipere, d_deslat, d_deslon) %>%
+  mutate(ipere = as.character(ipere)) %>%
+  rename(
+    id  = ipere,
+    lat = d_deslat,
+    lon = d_deslon
+  )
+```
+
+
+#### 1 minute {-}
+
+Résumé :
+
+- `r nrow(depl_TRANSIT)` déplacements;
+- `r n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_1min))` appels de `r5r::detailed_itineraries`;
+- `time_window = 1`, soit un seul itinéraire par déplacement.
+
+```{r transit-dt-1min, eval=FALSE}
+#| code-fold: true
+
+gc()
+startt_tc_1_f <- Sys.time()
+
+list.results.bymodes <- lapply(
+
+  unique(depl_TRANSIT$r5r_modelist),
+
+  function(mode){
+
+    # print(paste0("MODES : ", mode))
+
+    df.modes.sub <- subset(depl_TRANSIT, r5r_modelist == mode)
+
+    list.results.byhour <- lapply(
+
+      unique(depl_TRANSIT$r5r_datetime_1min),
+
+      function(hour){
+
+        # print(paste0("   DATETIME : ", hour))
+
+        df.datetime.sub <- subset(depl_TRANSIT, r5r_datetime_1min == hour)
+
+        ori.sub <- ori_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+        des.sub <- des_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+
+        return(
+          detailed_itineraries(
+            r5r_core,
+            ori.sub,
+            des.sub,
+            mode = str_split(mode, pattern = "-")[[1]],
+            departure_datetime = hour,
+            walk_speed = 5,
+            drop_geometry = T
+          )
+        )
+      }
+
+    )
+    return(do.call(rbind, list.results.byhour))
+  }
+
+)
+
+RESULTS_TRANSIT_1min <- do.call(rbind, list.results.bymodes)
+RESULTS_TRANSIT_1min <- RESULTS_TRANSIT_1min %>% arrange(as.numeric(from_id))
+
+
+endt_tc_1_f <- Sys.time()
+
+save(startt_car_f, endt_car_f, 
+     startt_tc_1_f, endt_tc_1_f,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/timestamps_final.RData")
+
+rm(list.results.bymodes)
+
+print(endt_tc_1_f - startt_tc_1_f)
+```
+
+Nombre de déplacements avec un résultat : `r n_distinct(RESULTS_TRANSIT_1min$from_id)` (`r round(n_distinct(RESULTS_TRANSIT_1min$from_id)/nrow(depl_TRANSIT),3)*100`&nbsp;%).
+
+
+
+
+
+#### 1 minute -- Avec pénalité pour la marche {-}
+
+Résumé :
+
+- `r nrow(depl_TRANSIT)` déplacements;
+- `r n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_1min))` appels de `r5r::detailed_itineraries`;
+- `time_window = 1`, soit un seul itinéraire par déplacement;
+- `walk_speed = 3.6`;
+- `max_walk_time = 15`.
+
+Nomenclature : WP = Walk Penalty
+
+
+```{r transit-dt-1min-wp, eval=FALSE}
+#| code-fold: true
+
+gc()
+startt_tc_1_wp_f <- Sys.time()
+
+list.results.bymodes <- lapply(
+
+  unique(depl_TRANSIT$r5r_modelist),
+
+  function(mode){
+
+    # print(paste0("MODES : ", mode))
+
+    df.modes.sub <- subset(depl_TRANSIT, r5r_modelist == mode)
+
+    list.results.byhour <- lapply(
+
+      unique(depl_TRANSIT$r5r_datetime_1min),
+
+      function(hour){
+
+        # print(paste0("   DATETIME : ", hour))
+
+        df.datetime.sub <- subset(depl_TRANSIT, r5r_datetime_1min == hour)
+
+        ori.sub <- ori_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+        des.sub <- des_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+
+        return(
+          detailed_itineraries(
+            r5r_core,
+            ori.sub,
+            des.sub,
+            mode = str_split(mode, pattern = "-")[[1]],
+            departure_datetime = hour,
+            walk_speed = 3.6,
+            max_walk_time = 15,
+            drop_geometry = T
+          )
+        )
+      }
+
+    )
+    return(do.call(rbind, list.results.byhour))
+  }
+
+)
+
+RESULTS_TRANSIT_1min_WP <- do.call(rbind, list.results.bymodes)
+RESULTS_TRANSIT_1min_WP <- RESULTS_TRANSIT_1min_WP %>% arrange(as.numeric(from_id))
+
+
+endt_tc_1_wp_f <- Sys.time()
+
+save(startt_car_f,     endt_car_f, 
+     startt_tc_1_f,    endt_tc_1_f,
+     startt_tc_1_wp_f, endt_tc_1_wp_f,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/timestamps_final.RData")
+
+rm(list.results.bymodes)
+
+print(endt_tc_1_wp_f - startt_tc_1_wp_f)
+```
+
+<!-- Nombre de déplacements avec un résultat : `r n_distinct(RESULTS_TRANSIT_1min_WP$from_id)` (`r round(n_distinct(RESULTS_TRANSIT_1min_WP$from_id)/nrow(depl_TRANSIT),3)*100`&nbsp;%). -->
+
+
+
+
+
+#### 5 minute {-}
+
+Résumé :
+
+- `r nrow(depl_TRANSIT)` déplacements;
+- `r n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_5min))` appels de `r5r::detailed_itineraries`;
+- `time_window = 5`, soit un seul itinéraire par déplacement.
+
+```{r transit-dt-5min, eval=FALSE}
+#| code-fold: true
+
+gc()
+startt_tc_5_f <- Sys.time()
+
+list.results.bymodes <- lapply(
+
+  unique(depl_TRANSIT$r5r_modelist),
+
+  function(mode){
+
+    # print(paste0("MODES : ", mode))
+
+    df.modes.sub <- subset(depl_TRANSIT, r5r_modelist == mode)
+
+    list.results.byhour <- lapply(
+
+      unique(depl_TRANSIT$r5r_datetime_5min),
+
+      function(hour){
+
+        # print(paste0("   DATETIME : ", hour))
+
+        df.datetime.sub <- subset(depl_TRANSIT, r5r_datetime_5min == hour)
+
+        ori.sub <- ori_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+        des.sub <- des_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+
+        return(
+          detailed_itineraries(
+            r5r_core,
+            ori.sub,
+            des.sub,
+            mode = str_split(mode, pattern = "-")[[1]],
+            departure_datetime = hour,
+            walk_speed = 5,
+            drop_geometry = T
+          )
+        )
+      }
+
+    )
+    return(do.call(rbind, list.results.byhour))
+  }
+
+)
+
+RESULTS_TRANSIT_5min <- do.call(rbind, list.results.bymodes)
+RESULTS_TRANSIT_5min <- RESULTS_TRANSIT_5min %>% arrange(as.numeric(from_id))
+
+
+endt_tc_5_f <- Sys.time()
+
+save(startt_car_f,     endt_car_f, 
+     startt_tc_1_f,    endt_tc_1_f,
+     startt_tc_1_wp_f, endt_tc_1_wp_f,
+     startt_tc_5_f,    endt_tc_5_f,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/timestamps_final.RData")
+
+rm(list.results.bymodes)
+
+print(endt_tc_5_f - startt_tc_5_f)
+```
+
+
+
+#### 15 minute {-}
+
+Résumé :
+
+- `r nrow(depl_TRANSIT)` déplacements;
+- `r n_distinct(paste(depl_TRANSIT$r5r_modelist, depl_TRANSIT$r5r_datetime_15min))` appels de `r5r::detailed_itineraries`;
+- `time_window = 15`, soit un seul itinéraire par déplacement.
+
+```{r transit-dt-15min}
+#| code-fold: true
+
+gc()
+startt_tc_15_f <- Sys.time()
+
+list.results.bymodes <- lapply(
+
+  unique(depl_TRANSIT$r5r_modelist),
+
+  function(mode){
+
+    # print(paste0("MODES : ", mode))
+
+    df.modes.sub <- subset(depl_TRANSIT, r5r_modelist == mode)
+
+    list.results.byhour <- lapply(
+
+      unique(depl_TRANSIT$r5r_datetime_15min),
+
+      function(hour){
+
+        # print(paste0("   DATETIME : ", hour))
+
+        df.datetime.sub <- subset(depl_TRANSIT, r5r_datetime_15min == hour)
+
+        ori.sub <- ori_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+        des.sub <- des_TRANSIT %>%
+          filter(id %in% df.modes.sub$ipere) %>%
+          filter(id %in% df.datetime.sub$ipere)
+
+
+        return(
+          detailed_itineraries(
+            r5r_core,
+            ori.sub,
+            des.sub,
+            mode = str_split(mode, pattern = "-")[[1]],
+            departure_datetime = hour,
+            walk_speed = 5,
+            drop_geometry = T
+          )
+        )
+      }
+
+    )
+    return(do.call(rbind, list.results.byhour))
+  }
+
+)
+
+RESULTS_TRANSIT_15min <- do.call(rbind, list.results.bymodes)
+RESULTS_TRANSIT_15min <- RESULTS_TRANSIT_15min %>% arrange(as.numeric(from_id))
+
+
+endt_tc_15_f <- Sys.time()
+
+save(startt_car_f,     endt_car_f, 
+     startt_tc_1_f,    endt_tc_1_f,
+     startt_tc_1_wp_f, endt_tc_1_wp_f,
+     startt_tc_5_f,    endt_tc_5_f,
+     startt_tc_15_f,   endt_tc_15_f,
+     file = "C:/Users/victo/OneDrive - ETS/MTR896/TRAVAIL/99_GitHub/MTR896/distances/timestamps_final.RData")
+
+rm(list.results.bymodes)
+
+print(endt_tc_15_f - startt_tc_15_f)
+```
+
+
+
+## Fin
+
+```{r}
+r5r::stop_r5(r5r_core)
+rJava::.jgc(R.gc = TRUE)
+```
+
