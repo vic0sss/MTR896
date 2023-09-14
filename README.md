@@ -34,4 +34,4 @@ Vous trouverez ci-dessous la liste de ces scripts.
 
 ### Bilans de GES
 
-[Calcul des émissions de GES](https://vic0sss.github/MTR896/bilanGES/preparationGES.html)
+[Calcul des émissions de GES](https://vic0sss.github.io/MTR896/bilanGES/preparationGES.html)
